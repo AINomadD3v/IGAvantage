@@ -1,18 +1,14 @@
-from airtable_management import AirtableClient
 import time
 import cv2
-from PIL import Image
-import pytesseract
-from logger_config import setup_logger
-from stealth_typing import StealthTyper
-from typing import Optional, Callable
-from popup_handler import PopupHandler
-from new_identity import new_identity
 import random
+import pytesseract
+from PIL import Image
+from typing import Optional, Callable
+from .logger_config import setup_logger
 
 # TODO  Change over OCR to ImageX from uiautomator2 for advanced poopups
 
-logger = setup_logger(__name__)
+logger = setup_logger(name='UiHelper')
 
 class UIHelper:
     def __init__(self, driver):

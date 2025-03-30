@@ -4,16 +4,15 @@ import os
 import requests
 from dotenv import load_dotenv
 from pyairtable import Api
-from logger_config import setup_logger
+from .logger_config import setup_logger
 
 logger = setup_logger(__name__)
-load_dotenv()
 
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class AirtableClient:
     def __init__(self):
-        self.api_key = os.getenv('POST_AIRTABLE_API_KEY')
-        self.api_key = os.getenv('LOGIN_AIRTABLE_API_KEY')
+        self.api_key = os.getenv('AIRTABLE_API_KEY')
         self.base_id = os.getenv('ALEXIS_BASE_ID')  # Default to posting base
         self.table_id = os.getenv('ALEXIS_CONTENT_TABLE_ID')  # Default to posting table
         self.view_name = "Unposted"

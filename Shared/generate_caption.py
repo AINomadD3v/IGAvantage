@@ -6,10 +6,10 @@ from difflib import SequenceMatcher
 from typing import Optional
 import uiautomator2 as u2
 
-from logger_config import setup_logger
-from stealth_typing import StealthTyper
-from ai_api import generate_caption
-from xpath_config import InstagramXPaths
+from .logger_config import setup_logger
+from .stealth_typing import StealthTyper
+from .ai_api import generate_caption
+from .xpath_config import InstagramXPaths
 
 logger = setup_logger(__name__)
 

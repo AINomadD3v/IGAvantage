@@ -3,7 +3,6 @@ from pathlib import Path
 import pickle
 import io
 import time
-import hashlib
 import subprocess
 import re
 from pathlib import Path
@@ -11,16 +10,16 @@ from typing import Tuple, Optional
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+
 from Shared.logger_config import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger(name='ContentManager')
 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 class ContentManager:
-    def __init__(self, credentials_path: str = 'config/credentials.json', token_path: str = 'token.pickle'):
+    def __init__(self, credentials_path: str = 'UploadBot/credentials.json', token_path: str = 'token.pickle'):
         self.logger = setup_logger(self.__class__.__name__)
         self.credentials_path = credentials_path
         self.token_path = token_path
@@ -37,7 +36,7 @@ class ContentManager:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, self.SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                 creds = flow.run_local_server(port=0)
                 with open(self.token_path, 'wb') as token:
                     pickle.dump(creds, token)

@@ -3,9 +3,10 @@ from stealth_typing import StealthTyper
 import time
 import hashlib
 import random
-from logzero import logger, setup_logger
-from ui_helper import UIHelper
-from loguru import logger
+from Shared.ui_helper import UIHelper
+from Shared.logger_config import setup_logger
+
+logger = setup_logger(name='Scroller')
 
 setup_logger(name=__name__)
 CONFIG = {

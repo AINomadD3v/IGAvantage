@@ -1,16 +1,19 @@
 import json
 import os
 import time
-from logger_config import setup_logger
+from .logger_config import setup_logger
 import uiautomator2 as u2
+from .ui_helper import UIHelper
 
 logger = setup_logger(name='PopupHander')
 
 class PopupHandler:
-    def __init__(self, driver, helper, config_path="popup_config.json"):
+    def __init__(self, driver, helper=None, config_path=None):
         self.d = driver
-        self.helper = helper
+        self.helper = helper or UIHelper(driver)
         self.logger = setup_logger("PopupHandler")
+        if config_path is None:
+            config_path = os.path.join(os.path.dirname(__file__), "popup_config.json")
         self.config = self._load_config(config_path)
 
     def _load_config(self, path):
@@ -82,7 +85,11 @@ class PopupHandler:
             .when("OK") \
             .click()
 
-
+        # 🎬 Reels NUX popup (Advanced XPath)
+        w("reels_about_popup") \
+            .when("About Reels") \
+            .when("Share") \
+            .click()
 
         w.start()
         self.logger.info("✅ Popup watchers registered and started.")

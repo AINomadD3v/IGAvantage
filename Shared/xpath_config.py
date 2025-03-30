@@ -38,7 +38,7 @@ class InstagramXPaths:
 
     @property
     def reels_share_button(self):
-        return f"//android.widget.Button[@content-desc='Next']"
+        return f"//android.widget.Button[@content-desc='Share']"
 
     @property
     def reel_caption_text_view(self):

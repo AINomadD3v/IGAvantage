@@ -4,7 +4,7 @@ import logging
 import subprocess
 from Shared.logger_config import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger(name='device_manager')
 
 class MediaCleaner:
     def __init__(self):

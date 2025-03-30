@@ -4,12 +4,13 @@ import time
 import uiautomator2 as u2
 from typing import Tuple, Optional
 
+from .device_manager import MediaCleaner
+from .instagram_actions import InstagramInteractions, SoundAdder
+from .content_management import ContentManager
 from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
-from device_manager import MediaCleaner
-from instagram_actions import InstagramInteractions, SoundAdder
-from content_management import ContentManager
 from Shared.generate_caption import generate_and_enter_caption  
+from Shared.popup_handler import PopupHandler
 
 logger = setup_logger(__name__)
 
@@ -19,6 +20,8 @@ def post_reel(app_package_name: str, PROJECT_ROOT: str, airtable_client: Airtabl
     device = u2.connect()
     content_manager = ContentManager()
     insta_actions = InstagramInteractions(device, app_package=app_package_name, airtable_manager=airtable_client)
+    popup_handler = PopupHandler(device)
+    popup_handler.register_watchers()
     xpath_config = insta_actions.xpath_config
 
     remote_path = None
@@ -103,6 +106,10 @@ def post_reel(app_package_name: str, PROJECT_ROOT: str, airtable_client: Airtabl
             return False, "Caption entry failed"
         logger.info(f"✅ Caption entered: {caption}")
         time.sleep(2)
+
+        logger.info("Attempting to call the watcher for about reels")
+        popup_handler.register_watchers()
+
 
         # Step 10: Share the reel
         logger.info("📤 Sharing the reel...")
