@@ -12,7 +12,8 @@ load_dotenv()
 
 class AirtableClient:
     def __init__(self):
-        self.api_key = os.getenv('AIRTABLE_API_KEY')
+        self.api_key = os.getenv('POST_AIRTABLE_API_KEY')
+        self.api_key = os.getenv('LOGIN_AIRTABLE_API_KEY')
         self.base_id = os.getenv('ALEXIS_BASE_ID')  # Default to posting base
         self.table_id = os.getenv('ALEXIS_CONTENT_TABLE_ID')  # Default to posting table
         self.view_name = "Unposted"

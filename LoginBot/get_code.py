@@ -9,11 +9,11 @@ import logging
 import cv2
 import numpy as np
 from PIL import Image
-from logger_config import setup_logger
-from stealth_typing import StealthTyper
+from Shared.logger_config import setup_logger
+from Shared.stealth_typing import StealthTyper
 from popup_handler import PopupHandler
 from new_identity import new_identity
-from ui_helper import UIHelper
+from Shared.ui_helper import UIHelper
 
 logger = setup_logger(__name__)
 

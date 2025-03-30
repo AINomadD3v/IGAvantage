@@ -4,9 +4,9 @@ import subprocess
 import time
 from get_code import FirefoxAutomation, EmailNavigation, TwoFactorTokenRetriever, UIHelper
 from instagram_automation import InstagramAutomation
-from stealth_typing import StealthTyper
-from logger_config import setup_logger
-from airtable_management import AirtableClient
+from Shared.stealth_typing import StealthTyper
+from Shared.logger_config import setup_logger
+from Shared.airtable_manager import AirtableClient
 from new_identity import new_identity
 
 

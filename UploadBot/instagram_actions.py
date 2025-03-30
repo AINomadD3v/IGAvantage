@@ -4,12 +4,14 @@ import re
 import time
 import random
 import logging
+import uiautomator2 as u2
 from uiautomator2.image import ImageX
 from typing import Optional, Tuple, Dict
 
-from xpath_config import InstagramXPaths
+from Shared.logger_config import setup_logger
+from Shared.xpath_config import InstagramXPaths
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 class InstagramInteractions:
     def __init__(self, device, app_package, airtable_manager):
@@ -316,8 +318,6 @@ class SoundAdder:
             return {'Full Reel Title': content_desc}
 
 if __name__ == "__main__":
-    import uiautomator2 as u2
-    from logger_config import setup_logger
 
     logger = setup_logger(__name__)
     device = u2.connect()

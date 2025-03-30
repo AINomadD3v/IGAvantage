@@ -192,8 +192,6 @@ class PopupHandler:
             self.logger.error(f"💥 Error in handle_cashback_popup: {e}")
             return False
 
-
-
     def handle_translation_popup(self, timeout=6):
         try:
             self.logger.info("🔍 Waiting for translation popup...")

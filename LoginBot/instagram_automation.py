@@ -2,8 +2,8 @@
 
 import time
 import uiautomator2 as u2
-from logger_config import setup_logger
-from stealth_typing import StealthTyper
+from Shared.logger_config import setup_logger
+from Shared.stealth_typing import StealthTyper
 from get_code import UIHelper
 
 logger = setup_logger(__name__)

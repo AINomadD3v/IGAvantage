@@ -4,12 +4,12 @@ import time
 import uiautomator2 as u2
 from typing import Tuple, Optional
 
-from logger_config import setup_logger
-from airtable_client import AirtableClient
+from Shared.logger_config import setup_logger
+from Shared.airtable_manager import AirtableClient
 from device_manager import MediaCleaner
 from instagram_actions import InstagramInteractions, SoundAdder
 from content_management import ContentManager
-from generate_caption import generate_and_enter_caption  
+from Shared.generate_caption import generate_and_enter_caption  
 
 logger = setup_logger(__name__)
 
