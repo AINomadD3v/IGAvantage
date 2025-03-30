@@ -51,3 +51,5 @@ class StealthTyper:
         self._adb_shell("input keyevent 61")  # KEYCODE_TAB
 
 
+
+

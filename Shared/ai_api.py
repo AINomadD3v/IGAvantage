@@ -39,16 +39,11 @@ def generate_caption():
     except Exception as e:
         return f"Error: {str(e)}"
 
-"""
-Below is just kept for testing API.
 
-This is not needed to run the main script.
-"""
-
-
-def main():
-    caption = generate_caption()
-    print(caption)
-
-if __name__ == "__main__":
-    main()
+# def main():
+#     caption = generate_caption()
+#     print(caption)
+#
+# if __name__ == "__main__":
+#     main()
+#

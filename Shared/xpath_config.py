@@ -239,3 +239,4 @@ class GmailXPaths:
     @property
     def instagram_verification_email(self):
         return '//android.widget.Button[contains(@text, "Unread. instagram") and contains(@text, "is your instagram confirmation code")]'
+
