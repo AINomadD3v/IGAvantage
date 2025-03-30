@@ -1,0 +1,59 @@
+# Ignore macOS system files
+.DS_Store
+
+# Ignore Linux system files
+*.swp
+*~
+
+# Ignore Windows system files
+Thumbs.db
+Desktop.ini
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore environment files
+.env
+.venv/
+env/
+venv/
+
+# Ignore package manager files
+node_modules/
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+
+# Ignore logs and databases
+*.log
+*.db
+logs/
+instagram_accounts.db
+
+# Ignore IDE and editor files
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Ignore compiled files
+*.o
+*.so
+*.out
+*.class
+
+# Ignore build directories
+/dist/
+build/
+/target/
+
+# Ignore auth-related files
+credentials.json
+token.pickle
+
+# Ignore pytest cache
+.pytest_cache/
+
