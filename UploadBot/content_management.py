@@ -109,38 +109,42 @@ class ContentManager:
                 return False, None
 
             ext = os.path.splitext(file_path)[-1]
-            dir_name = account_name  # ✅ No media_type suffix
+            dir_name = account_name
             remote_file_name = f"{account_name}_{int(time.time())}{ext}"
-            remote_path = f"/sdcard/Pictures/{dir_name}/{remote_file_name}"
+            remote_dir = f"/sdcard/Pictures/{dir_name}"
+            remote_path = f"{remote_dir}/{remote_file_name}"
 
             # Create remote directory
-            mkdir_cmd = f"adb shell mkdir -p /sdcard/Pictures/{dir_name}"
-            subprocess.run(mkdir_cmd, shell=True, check=True)
+            subprocess.run(f"adb shell mkdir -p {remote_dir}", shell=True, check=True)
 
             # Push file
-            push_cmd = ['adb', 'push', file_path, remote_path]
-            result = subprocess.run(push_cmd, capture_output=True, text=True)
+            result = subprocess.run(["adb", "push", file_path, remote_path], capture_output=True, text=True)
             if result.returncode != 0:
                 self.logger.error(f"ADB push failed: {result.stderr}")
                 return False, None
+            self.logger.info(f"📤 File pushed to: {remote_path}")
 
-            # ✅ Refresh specific file in media store
-            refresh_cmd = f"adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://{remote_path}"
-            subprocess.run(refresh_cmd, shell=True, check=True)
-            self.logger.info(f"Media scanner broadcast sent for: {remote_path}")
+            # Multi-strategy rescan for Samsung + Huawei
+            scan_cmds = [
+                # Legacy media scan (works on Samsung)
+                f"adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://{remote_path}",
+                # Full volume rescan (works better on Huawei)
+                "adb shell cmd media scan /sdcard/Pictures",
+                # Modern content scan (for Android 10+)
+                "adb shell content call --method scan_volume --uri content://media --arg external_primary",
+            ]
 
-            # Optional: confirm file exists
-            verify_cmd = f"adb shell ls {remote_path}"
-            verify_result = subprocess.run(verify_cmd, shell=True, capture_output=True, text=True)
-            if "No such file" in verify_result.stderr:
-                self.logger.error(f"File not found on device after push: {remote_path}")
-                return False, None
+            for cmd in scan_cmds:
+                scan_result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                self.logger.info(f"📣 Media scan attempted: {cmd}")
+                self.logger.debug(f"Scan output: {scan_result.stdout.strip()}")
 
-            self.logger.info(f"File pushed to: {remote_path}")
             return True, remote_path
 
         except Exception as e:
             self.logger.error(f"Push to device failed: {e}", exc_info=True)
             return False, None
+
+
 
      

@@ -2,6 +2,7 @@
 
 import os
 import requests
+from datetime import datetime
 from dotenv import load_dotenv
 from pyairtable import Api
 from .logger_config import setup_logger
@@ -25,46 +26,66 @@ class AirtableClient:
     # --------- Posting System (from airtable_client.py) --------- #
     def get_single_unposted_record(self):
         """
-        Pull a single unposted record from Airtable with required fields.
+        Pull a single unposted record from Airtable with required fields,
+        where 'Schedule Date' matches today's date.
         """
         try:
             logger.info("Fetching a single unposted record...")
             table = self.api.table(self.base_id, self.table_id)
 
             fields = [
-                'Username', 'Package Name', 'Caption',
-                'Drive URL', 'Song'
+                'Username', 'Package Name',
+                'Drive URL', 'Schedule Date'
             ]
 
-            records = table.all(view=self.view_name, fields=fields, max_records=1)
+            records = table.all(view=self.view_name, fields=fields)
 
             if not records:
                 logger.warning("No unposted records found.")
                 return None
 
-            record = records[0]
-            data = record.get('fields', {})
-            record_id = record.get('id')
+            today_str = datetime.today().strftime('%d/%m/%Y')
 
-            raw_package = data.get('Package Name')
-            package_name = raw_package[0] if isinstance(raw_package, list) and raw_package else raw_package
+            for record in records:
+                data = record.get('fields', {})
+                schedule_date = data.get('Schedule Date')
+                if schedule_date != today_str:
+                    continue
 
-            logger.info(f"✅ Pulled record for: {data.get('Username')}")
+                record_id = record.get('id')
+                raw_package = data.get('Package Name')
+                package_name = raw_package[0] if isinstance(raw_package, list) and raw_package else raw_package
 
-            return {
-                'id': record_id,
-                'fields': {
-                    'username': data.get('Username'),
-                    'package_name': package_name,
-                    'caption': data.get('Caption'),
-                    'media_url': data.get('Drive URL'),
-                    'song': data.get('Song'),
+                logger.info(f"✅ Pulled record for: {data.get('Username')} scheduled for {schedule_date}")
+
+                return {
+                    'id': record_id,
+                    'fields': {
+                        'username': data.get('Username'),
+                        'package_name': package_name,
+                        'media_url': data.get('Drive URL'),
+                    }
                 }
-            }
+
+            logger.warning(f"No unposted records found for today: {today_str}")
+            return None
 
         except Exception as e:
             logger.error(f"Error fetching unposted record: {e}")
             return None
+
+
+    def mark_something_went_wrong_and_rotate(self, record_id: str):
+        """
+        Marks 'Something Went Wrong?' = True in Airtable, logs it, and returns a signal to rotate account.
+        """
+        try:
+            self.update_record_fields(record_id, {'Something Went Wrong?': True})
+            logger.warning(f"⚠️ Marked record {record_id} as 'Something Went Wrong?' = True")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to mark record {record_id} with 'Something Went Wrong?': {e}")
+            return False
 
     def update_record_fields(self, record_id: str, fields: dict):
         """

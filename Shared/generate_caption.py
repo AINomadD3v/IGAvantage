@@ -30,7 +30,7 @@ class GenerateCaption:
 
     def wait_for_caption_field(self, timeout=10):
         self.logger.info("🕵️ Waiting for caption input field...")
-        field = self.device.xpath(self.xpath)
+        field = self.device.xpath("//*[contains(@resource-id, 'caption_input_text_view')]")
         if not field.wait(timeout=timeout):
             self.logger.error("❌ Caption input field not found.")
             return None
@@ -43,7 +43,7 @@ class GenerateCaption:
         time.sleep(2)
 
     def get_caption_text(self) -> str:
-        field = self.device.xpath(self.xpath)
+        field = self.device.xpath("//*[contains(@resource-id, 'caption_input_text_view')]")
         try:
             raw = field.get(timeout=5).attrib.get('text', '')
             self.logger.debug(f"📥 Fetched caption box text: {raw}")

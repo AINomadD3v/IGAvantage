@@ -91,6 +91,36 @@ class PopupHandler:
             .when("Share") \
             .click()
 
+        # Create a sticker popup
+        w("create_sticker_popup") \
+            .when("Create a sticker") \
+            .when("Not now") \
+            .click()
+
+        # Keep Editing Your Draft Popup
+        w("edit_reel_draft") \
+            .when("Keep editing your draft?") \
+            .when("Start new video") \
+            .click()
+
+        # 🎵 Trending audio tab (click parent of "Trending" when detected)
+        w("reels_trending_tab") \
+            .when("Trending") \
+            .call(lambda el: el.parent().click())
+
+        # Others can download your reels Popup
+        w("others_can_download") \
+            .when("Others can now download") \
+            .when("Continue") \
+            .click()
+        # ❌ Generic error toast: "Something went wrong"
+        w("reel_share_failure_toast") \
+            .when("//*[contains(@text, 'Something went wrong')]") \
+            .call(lambda el: logger.warning("⚠️ Toast detected: Something went wrong"))
+
+
+
+
         w.start()
         self.logger.info("✅ Popup watchers registered and started.")
 
