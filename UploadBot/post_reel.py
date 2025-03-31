@@ -145,8 +145,18 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
 
         # Step 12: Share the reel
         logger.info("📤 Sharing the reel...")
-        if not insta_actions.click_by_xpath("//*[contains(@text, 'Next') or contains(@content-desc, 'Next')]"):
+
+        xpath = (
+            "//*["
+            "contains(@text, 'Next') or "
+            "contains(@content-desc, 'Next') or "
+            "contains(@content-desc, 'Share')"
+            "]"
+        )
+
+        if not insta_actions.click_by_xpath(xpath):
             return False, "Failed to share reel"
+
         logger.info("✅ Reel shared successfully!")
         time.sleep(5)
 
@@ -191,7 +201,14 @@ def test_click_next_button(device):
     logger.info("🧪 Starting test: Click 'Next' button by visible text")
 
     try:
-        xpath = "//*[contains(@text, 'Next') or contains(@content-desc, 'Next')]"
+        xpath = (
+            "//*[" 
+            "contains(@text, 'Next') or "
+            "contains(@content-desc, 'Next') or "
+            "contains(@content-desc, 'Share')"
+            "]"
+        )
+
         selector = device.xpath(xpath)
 
         if not selector.wait(timeout=5):

@@ -85,11 +85,6 @@ class PopupHandler:
             .when("OK") \
             .click()
 
-        # 🎬 Reels NUX popup (Advanced XPath)
-        w("reels_about_popup") \
-            .when("About Reels") \
-            .when("Share") \
-            .click()
 
         # Create a sticker popup
         w("create_sticker_popup") \
@@ -113,13 +108,31 @@ class PopupHandler:
             .when("Others can now download") \
             .when("Continue") \
             .click()
+
         # ❌ Generic error toast: "Something went wrong"
         w("reel_share_failure_toast") \
             .when("//*[contains(@text, 'Something went wrong')]") \
             .call(lambda el: logger.warning("⚠️ Toast detected: Something went wrong"))
 
+        # New ways to reuse popup
+        w("new_ways_to_reuse") \
+            .when("New ways to reuse") \
+            .when("OK") \
+            .click()
 
+        # Allow Media Access
+        w("allow_media_access") \
+            .when("//*[contains(@resource-id, 'perm_button_container')]") \
+            .when("ALLOW") \
+            .click()
 
+        # 🎬 Reels NUX popup (Advanced XPath)
+        w("reels_about_popup") \
+            .when("//*[contains(@text, 'About Reels')]") \
+            .when("//*[contains(@content-desc, 'Share')]") \
+            .click()
+
+        #//android.widget.Button[@content-desc="Share"]
 
         w.start()
         self.logger.info("✅ Popup watchers registered and started.")
