@@ -42,12 +42,13 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
     insta_actions = InstagramInteractions(device, app_package=package_name, airtable_manager=airtable_client)
     popup_handler = PopupHandler(device)
     popup_handler.register_watchers()
+    popup_handler.start_watcher_loop()
 
     remote_path = None
     airtable_success = False
 
     try:
-        device.watcher.start()
+
         # Step 1: Launch the Instagram clone
         logger.info(f"🚀 Launching Instagram package: {package_name}")
         if not insta_actions.open_app():
@@ -135,13 +136,32 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
         if failure_triggered.is_set():
             return False, "Aborted due to 'Something went wrong' toast"
 
+        device.watcher.run()  # force manual check
+
+
         # Step 11: Generate and enter caption
         logger.info("✍️ Writing AI-generated caption...")
-        caption = generate_and_enter_caption(device, app_package=package_name)
+        # Step 11: Generate and enter caption (with retry logic)
+        max_caption_retries = 2
+        caption = None
+
+        for attempt in range(1, max_caption_retries + 1):
+            logger.info(f"✍️ Attempting AI-generated caption entry (try {attempt}/{max_caption_retries})...")
+            caption = generate_and_enter_caption(device, app_package=package_name)
+
+            if caption:
+                logger.info(f"✅ Caption entry succeeded on attempt {attempt}")
+                break
+            else:
+                logger.warning(f"⚠️ Caption entry failed on attempt {attempt}")
+                # Force-check for any interfering popups
+                device.watcher.run()
+                popup_handler.handle_all_popups()
+                time.sleep(1.5)
+
         if not caption:
-            return False, "Caption entry failed"
-        logger.info(f"✅ Caption entered: {caption}")
-        time.sleep(2)
+            return False, "Caption entry failed after retries"
+
 
         # Step 12: Share the reel
         logger.info("📤 Sharing the reel...")

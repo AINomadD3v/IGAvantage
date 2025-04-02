@@ -1,13 +1,11 @@
 import time
 import random
-from stealth_typing import StealthTyper
 import hashlib
-from typing import List, Dict, Optional
-from logger_config import setup_logger
-from ui_helper import UIHelper
 import uiautomator2 as u2
-from ui_helper import UIHelper
-from logger_config import setup_logger
+from typing import List, Dict, Optional
+from Shared.stealth_typing import StealthTyper
+from Shared.logger_config import setup_logger
+from Shared.ui_helper import UIHelper
 from reels_config import CONFIG
 
 

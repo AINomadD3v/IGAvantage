@@ -1,4 +1,5 @@
 import json
+import threading
 import os
 import time
 from .logger_config import setup_logger
@@ -92,11 +93,16 @@ class PopupHandler:
             .when("Not now") \
             .click()
 
-        # Keep Editing Your Draft Popup
         w("edit_reel_draft") \
-            .when("Keep editing your draft?") \
-            .when("Start new video") \
+            .when("//*[contains(@text, 'Keep editing your draft?') or contains(@text, 'Continue editing your draft?')]") \
+            .when("//*[contains(@text, 'Start new video')]") \
             .click()
+
+        # 🎬 Reels NUX popup (Advanced XPath)
+        w("reels_about_popup") \
+        .when("//*[contains(@text, 'About Reels') or contains(@text, 'Your reel will be shared publicly')]") \
+        .when("//*[contains(@content-desc, 'Share')]") \
+        .click()
 
         # 🎵 Trending audio tab (click parent of "Trending" when detected)
         w("reels_trending_tab") \
@@ -114,11 +120,12 @@ class PopupHandler:
             .when("//*[contains(@text, 'Something went wrong')]") \
             .call(lambda el: logger.warning("⚠️ Toast detected: Something went wrong"))
 
-        # New ways to reuse popup
         w("new_ways_to_reuse") \
-            .when("New ways to reuse") \
+            .when("//*[contains(@text, 'New ways to reuse')]") \
             .when("OK") \
-            .click()
+            .call(lambda d, el: self.logger.warning("✅ WATCHER triggered: New ways to reuse") or el.click())
+
+        # //android.widget.Button[@content-desc="OK"]
 
         # Allow Media Access
         w("allow_media_access") \
@@ -126,17 +133,28 @@ class PopupHandler:
             .when("ALLOW") \
             .click()
 
-        # 🎬 Reels NUX popup (Advanced XPath)
-        w("reels_about_popup") \
-            .when("//*[contains(@text, 'About Reels')]") \
-            .when("//*[contains(@content-desc, 'Share')]") \
+        w("account_restriction") \
+            .when("//*[contains(@content-desc, 'We added a restriction to your account')]") \
+            .when("//*[contains(@content-desc, 'Cancel')]") \
             .click()
 
-        #//android.widget.Button[@content-desc="Share"]
 
         w.start()
         self.logger.info("✅ Popup watchers registered and started.")
 
+    def start_watcher_loop(self, interval=0.5):
+        """Continuously run watcher to handle popups in background."""
+        def loop():
+            self.logger.info("📡 Watcher loop started")
+            while True:
+                try:
+                    self.d.watcher.run()
+                except Exception as e:
+                    self.logger.error(f"💥 Watcher run error: {e}")
+                time.sleep(interval)
+
+        thread = threading.Thread(target=loop, daemon=True)
+        thread.start()
 
     def handle_cookie_popup(self) -> bool:
         try:
