@@ -3,6 +3,7 @@
 import os
 import requests
 from datetime import datetime
+import pytz
 from dotenv import load_dotenv
 from pyairtable import Api
 from .logger_config import setup_logger
@@ -43,7 +44,7 @@ class AirtableClient:
     def get_single_unposted_record(self):
         """
         Pull a single unposted record from Airtable with required fields,
-        where 'Schedule Date' matches today's date.
+        where 'Schedule Date' matches today's local date (America/Bogota).
         """
         try:
             logger.info("Fetching a single unposted record...")
@@ -60,7 +61,10 @@ class AirtableClient:
                 logger.warning("No unposted records found.")
                 return None
 
-            today = datetime.today().date()
+            # Timezone-aware local date (Bogota)
+            bogota = pytz.timezone("America/Bogota")
+            today = datetime.now(bogota).date()
+
             logger.info(f"📅 Looking for records with Schedule Date = {today.isoformat()}")
 
             for record in records:
@@ -75,13 +79,15 @@ class AirtableClient:
                     continue
 
                 try:
-                    scheduled_date = datetime.fromisoformat(schedule_raw).date()
+                    # Convert from Airtable UTC -> Bogota local date
+                    scheduled_dt = datetime.fromisoformat(schedule_raw.replace("Z", "+00:00"))
+                    scheduled_local_date = scheduled_dt.astimezone(bogota).date()
                 except ValueError:
                     logger.warning(f"⚠️ Could not parse date: {schedule_raw}")
                     continue
 
-                if scheduled_date != today:
-                    logger.debug(f"⏭️ Skipping — not scheduled for today ({scheduled_date} != {today})")
+                if scheduled_local_date != today:
+                    logger.debug(f"⏭️ Skipping — not scheduled for today ({scheduled_local_date} != {today})")
                     continue
 
                 record_id = record.get("id")
@@ -105,6 +111,50 @@ class AirtableClient:
         except Exception as e:
             logger.error(f"❌ Error fetching unposted record: {e}", exc_info=True)
             return None
+    
+    def get_unposted_records_for_today(self, max_count: int = 1):
+        try:
+            logger.info(f"📥 Fetching up to {max_count} unposted records for today...")
+            table = self.api.table(self.base_id, self.table_id)
+            records = table.all(view=self.view_name)
+            bogota = pytz.timezone("America/Bogota")
+            today = datetime.now(bogota).date()
+
+            matching = []
+            for record in records:
+                fields = record.get("fields", {})
+                schedule_raw = fields.get("Schedule Date")
+                if not schedule_raw:
+                    continue
+                try:
+                    scheduled_dt = datetime.fromisoformat(schedule_raw.replace("Z", "+00:00"))
+                    if scheduled_dt.astimezone(bogota).date() != today:
+                        continue
+                except Exception:
+                    continue
+
+                username = fields.get("Username")
+                media_url = fields.get("Drive URL")
+                raw_package = fields.get("Package Name")
+                package_name = raw_package[0] if isinstance(raw_package, list) and raw_package else raw_package
+
+                matching.append({
+                    "id": record["id"],
+                    "fields": {
+                        "username": username,
+                        "package_name": package_name,
+                        "media_url": media_url
+                    }
+                })
+
+                if len(matching) >= max_count:
+                    break
+
+            return matching
+        except Exception as e:
+            logger.error(f"❌ Error fetching multiple unposted records: {e}", exc_info=True)
+            return []
+
 
 
     def mark_something_went_wrong_and_rotate(self, record_id: str):
@@ -184,26 +234,3 @@ class AirtableClient:
         except Exception as e:
             logger.error(f"❌ Failed to update Airtable record: {e}")
             return None
-
-
-# Optional test function
-def main():
-    client = AirtableClient()
-    logger.info("Testing AirtableClient...")
-
-    base_id = os.getenv('AIRTABLE_BASE_ID')
-    table_id = os.getenv('IG_ARMY_ACCOUNTS_TABLE_ID')
-    unused_view_id = os.getenv('IG_ARMY_UNUSED_VIEW_ID')
-
-    if not base_id or not table_id:
-        logger.error("Missing base/table IDs for test")
-        return
-
-    account = client.get_single_active_account(base_id, table_id, unused_view_id)
-    if account:
-        logger.info("✅ Account retrieved successfully")
-
-
-if __name__ == "__main__":
-    main()
-

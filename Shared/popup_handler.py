@@ -100,11 +100,11 @@ class PopupHandler:
             .when("//*[contains(@text, 'Start new video')]") \
             .click()
 
-        # 🎬 Reels NUX popup (Advanced XPath)
         w("reels_about_popup") \
-        .when("//*[contains(@text, 'About Reels') or contains(@text, 'Your reel will be shared publicly')]") \
-        .when("//*[contains(@content-desc, 'Share')]") \
-        .click()
+            .when("//*[contains(@resource-id, 'clips_nux_sheet_title') and @text='About Reels']") \
+            .when("//*[contains(@resource-id, 'clips_nux_sheet_share_button') and @content-desc='Share']") \
+            .click()
+
 
         # 🎵 Trending audio tab (click parent of "Trending" when detected)
         w("reels_trending_tab") \

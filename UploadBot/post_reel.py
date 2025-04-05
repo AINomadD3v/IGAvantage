@@ -1,4 +1,4 @@
-# post_reel.py
+# post_reel.pypos
 import os
 import time
 import uiautomator2 as u2
@@ -128,7 +128,6 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
         else:
             return False, "'Add audio' button not found after retries"
 
-
         # Step 10: Add music
         logger.info("🎵 Adding sound to reel...")
         sound_adder = SoundAdder(device=device, app_package=package_name, insta_actions=insta_actions)
@@ -141,8 +140,8 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
         if failure_triggered.is_set():
             return False, "Aborted due to 'Something went wrong' toast"
 
+        time.sleep(2)
         device.watcher.run()  # force manual check
-
 
         # Step 11: Generate and enter caption
         logger.info("✍️ Writing AI-generated caption...")
@@ -166,7 +165,6 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
 
         if not caption:
             return False, "Caption entry failed after retries"
-
 
         # Step 12: Share the reel
         logger.info("📤 Sharing the reel...")
@@ -205,10 +203,8 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
         media_cleaner = MediaCleaner()
         media_cleaner.clean_posted_media(album_path)
 
-        # Step 15: Close the Instagram app
-        logger.info("🛑 Closing Instagram app")
-        device.app_stop(package_name)
-
+        logger.info("Closing IG Clone")
+        insta_actions.close_app()
 
         if airtable_success:
             return True, "✅ Reel posted and Airtable updated"
@@ -227,45 +223,6 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
             except Exception as e:
                 logger.error(f"Failed to delete local media: {e}")
 
-
-def test_click_next_button(device):
-    import time
-    import logging
-
-    logger = logging.getLogger(__name__)
-    logger.info("🧪 Starting test: Click 'Next' button by visible text")
-
-    try:
-        xpath = (
-            "//*[" 
-            "contains(@text, 'Next') or "
-            "contains(@content-desc, 'Next') or "
-            "contains(@content-desc, 'Share')"
-            "]"
-        )
-
-        selector = device.xpath(xpath)
-
-        if not selector.wait(timeout=5):
-            logger.error("❌ 'Next' button not found")
-            return False
-
-        el = selector.get()
-        bounds = el.bounds
-        center = el.center()
-
-        logger.info(f"📍 'Next' button bounds: {bounds}, center: {center}")
-
-        # ADB-level click
-        device.click(*center)
-        logger.info(f"✅ ADB click sent at: {center}")
-        time.sleep(2)
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Exception during Next button test: {e}", exc_info=True)
-        return False
-
 def main():
     model_map = {
         "1": "alexis",
@@ -283,28 +240,44 @@ def main():
         logger.error("❌ Invalid selection. Exiting.")
         return
 
-    logger.info(f"🚀 Starting Instagram reel posting flow for model: {model}")
+    num_to_process = input("How many records to process today? ").strip()
+    try:
+        count = int(num_to_process)
+        if count <= 0:
+            raise ValueError()
+    except ValueError:
+        logger.error("❌ Invalid number. Exiting.")
+        return
+
     airtable_client = AirtableClient(model_name=model)
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
     device = u2.connect()
     logger.info(f"📱 Connected to device: {device.serial}")
 
-    record = airtable_client.get_single_unposted_record()
-    if not record:
-        logger.error("❌ No unposted record found.")
+    records = airtable_client.get_unposted_records_for_today(max_count=count)
+
+    if not records:
+        logger.error("❌ No scheduled records for today.")
         return
 
-    success, message = post_reel(
-        record=record,
-        PROJECT_ROOT=PROJECT_ROOT,
-        airtable_client=airtable_client
-    )
+    for i, record in enumerate(records, 1):
+        logger.info(f"🔁 Processing record {i}/{len(records)}")
+        success, message = post_reel(
+            record=record,
+            PROJECT_ROOT=PROJECT_ROOT,
+            airtable_client=airtable_client
+        )
 
-    if success:
-        logger.info(f"✅ Success: {message}")
-    else:
-        logger.error(f"❌ Failure: {message}")
+        if success:
+            logger.info(f"✅ Success: {message}")
+        else:
+            logger.error(f"❌ Failure: {message}")
+            airtable_client.mark_something_went_wrong_and_rotate(record["id"])
+            user_input = input("Continue with next record? (y/n): ").strip().lower()
+            if user_input != "y":
+                logger.info("👋 Exiting by user request.")
+                break
+
 
 if __name__ == "__main__":
     main()
