@@ -12,10 +12,26 @@ logger = setup_logger(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class AirtableClient:
-    def __init__(self):
-        self.api_key = os.getenv('AIRTABLE_API_KEY')
-        self.base_id = os.getenv('ALEXIS_BASE_ID')  # Default to posting base
-        self.table_id = os.getenv('ALEXIS_CONTENT_TABLE_ID')  # Default to posting table
+    def __init__(self, model_name: str = "alexis"):
+        self.api_key = os.getenv("AIRTABLE_API_KEY")
+        
+        model_map = {
+            "alexis": {
+                "base_id": os.getenv("ALEXIS_BASE_ID"),
+                "table_id": os.getenv("ALEXIS_CONTENT_TABLE_ID")
+            },
+            "maddison": {
+                "base_id": os.getenv("MADDISON_BASE_ID"),
+                "table_id": os.getenv("MADDISON_CONTENT_TABLE_ID")
+            }
+        }
+
+        if model_name not in model_map:
+            raise ValueError(f"Unsupported model name: {model_name}")
+        
+        model_config = model_map[model_name]
+        self.base_id = model_config["base_id"]
+        self.table_id = model_config["table_id"]
         self.view_name = "Unposted"
 
         if not all([self.api_key, self.base_id, self.table_id]):
@@ -44,34 +60,50 @@ class AirtableClient:
                 logger.warning("No unposted records found.")
                 return None
 
-            today_str = datetime.today().strftime('%d/%m/%Y')
+            today = datetime.today().date()
+            logger.info(f"📅 Looking for records with Schedule Date = {today.isoformat()}")
 
             for record in records:
-                data = record.get('fields', {})
-                schedule_date = data.get('Schedule Date')
-                if schedule_date != today_str:
+                data = record.get("fields", {})
+                username = data.get("Username")
+                schedule_raw = data.get("Schedule Date")
+
+                logger.debug(f"👀 Checking record: {username} | Schedule Date raw: {schedule_raw}")
+
+                if not schedule_raw:
+                    logger.debug("⏭️ Skipping — no schedule date")
                     continue
 
-                record_id = record.get('id')
-                raw_package = data.get('Package Name')
+                try:
+                    scheduled_date = datetime.fromisoformat(schedule_raw).date()
+                except ValueError:
+                    logger.warning(f"⚠️ Could not parse date: {schedule_raw}")
+                    continue
+
+                if scheduled_date != today:
+                    logger.debug(f"⏭️ Skipping — not scheduled for today ({scheduled_date} != {today})")
+                    continue
+
+                record_id = record.get("id")
+                raw_package = data.get("Package Name")
                 package_name = raw_package[0] if isinstance(raw_package, list) and raw_package else raw_package
 
-                logger.info(f"✅ Pulled record for: {data.get('Username')} scheduled for {schedule_date}")
+                logger.info(f"✅ Matched: {username} scheduled for {schedule_raw}")
 
                 return {
-                    'id': record_id,
-                    'fields': {
-                        'username': data.get('Username'),
-                        'package_name': package_name,
-                        'media_url': data.get('Drive URL'),
-                    }
+                    "id": record_id,
+                    "fields": {
+                        "username": username,
+                        "package_name": package_name,
+                        "media_url": data.get("Drive URL"),
+                    },
                 }
 
-            logger.warning(f"No unposted records found for today: {today_str}")
+            logger.warning("⚠️ No matching records with today's schedule date.")
             return None
 
         except Exception as e:
-            logger.error(f"Error fetching unposted record: {e}")
+            logger.error(f"❌ Error fetching unposted record: {e}", exc_info=True)
             return None
 
 

@@ -28,6 +28,7 @@ class PopupHandler:
         w = self.d.watcher
 
 
+
         # Photo Removed Popup
         w("photo_removed_popup") \
         .when("^We removed your photo") \
@@ -70,6 +71,7 @@ class PopupHandler:
             .when("^cfr.dismiss") \
             .click()
 
+        # Location access popup
         w("location_services") \
             .when('//*[@content-desc="Continue"]') \
             .click()
@@ -86,13 +88,13 @@ class PopupHandler:
             .when("OK") \
             .click()
 
-
         # Create a sticker popup
         w("create_sticker_popup") \
             .when("Create a sticker") \
             .when("Not now") \
             .click()
 
+        # Edit your reels draft popup
         w("edit_reel_draft") \
             .when("//*[contains(@text, 'Keep editing your draft?') or contains(@text, 'Continue editing your draft?')]") \
             .when("//*[contains(@text, 'Start new video')]") \
@@ -115,24 +117,36 @@ class PopupHandler:
             .when("Continue") \
             .click()
 
+        # Allow Media Access
+        w("allow_media_access") \
+            .when("//*[contains(@text, 'access photos')]") \
+            .when("//*[contains(@resource-id, 'permission_allow_button')]") \
+            .click()
+
+        # Allow camera access
+        w("allow_camera_access") \
+            .when("//*[contains(@text, 'take photos')]") \
+            .when("//*[contains(@resource-id, 'permission_allow_button')]") \
+            .click()
+
+        # Allow microphone access
+        w("allow_microphone_access") \
+            .when("//*[contains(@text, 'record audio')]") \
+            .when("//*[contains(@resource-id, 'permission_allow_button')]") \
+            .click()
+
         # ❌ Generic error toast: "Something went wrong"
         w("reel_share_failure_toast") \
             .when("//*[contains(@text, 'Something went wrong')]") \
             .call(lambda el: logger.warning("⚠️ Toast detected: Something went wrong"))
 
+        # New ways to reuse popup
         w("new_ways_to_reuse") \
             .when("//*[contains(@text, 'New ways to reuse')]") \
-            .when("OK") \
-            .call(lambda d, el: self.logger.warning("✅ WATCHER triggered: New ways to reuse") or el.click())
-
-        # //android.widget.Button[@content-desc="OK"]
-
-        # Allow Media Access
-        w("allow_media_access") \
-            .when("//*[contains(@resource-id, 'perm_button_container')]") \
-            .when("ALLOW") \
+            .when("//*[contains(@content-desc, 'OK')]") \
             .click()
 
+        # .call(lambda d, el: self.logger.warning("✅ WATCHER triggered: New ways to reuse") or el.click())
         w("account_restriction") \
             .when("//*[contains(@content-desc, 'We added a restriction to your account')]") \
             .when("//*[contains(@content-desc, 'Cancel')]") \

@@ -5,6 +5,7 @@ import time
 import random
 import logging
 import uiautomator2 as u2
+import subprocess
 from uiautomator2.image import ImageX
 from uiautomator2 import Direction
 from typing import Optional, Tuple, Dict
@@ -47,19 +48,42 @@ class InstagramInteractions:
         logger.error("❌ App UI did not become inspectable in time.")
         return False
 
+    def open_app(self) -> bool:
 
-    def open_app(self):
-        """
-        Launch the Instagram clone via its package name.
-        """
         try:
-            self.logger.info(f"🚀 Launching app: {self.app_package}")
-            self.device.app_start(self.app_package)
-            time.sleep(2)  # brief delay to allow UI to load
-            return True
-        except Exception as e:
-            self.logger.error(f"❌ Failed to launch app {self.app_package}: {str(e)}")
+            logger.info(f"🚀 Launching app via adb am start: {self.app_package}")
+
+            # Strip whitespace in case Airtable value or env had extra space
+            clean_package = self.app_package.strip()
+            component = f"{clean_package}/.activity.MainTabActivity"
+
+            subprocess.run([
+                "adb", "shell", "am", "start",
+                "-n", component
+            ], check=True)
+
+            time.sleep(2.5)
+            self.device = u2.connect()
+
+            for attempt in range(10):
+                current = self.device.app_current()
+                logger.debug(f"[{attempt+1}/10] Foreground app: {current}")
+                if current.get("package") == clean_package:
+                    logger.info("✅ App is now in foreground")
+                    return True
+                time.sleep(1.0)
+
+            logger.error("❌ App did not become foreground after retries")
             return False
+
+        except Exception as e:
+            logger.error(f"❌ Failed to launch app {self.app_package}: {e}", exc_info=True)
+            return False
+
+
+
+
+
 
     def click_by_xpath(self, xpath, timeout=10):
         try:
@@ -78,7 +102,7 @@ class InstagramInteractions:
 
 
     def new_post(self):
-        if self.click_by_xpath(self.xpath_config.creation_tab):
+        if self.click_by_xpath("//*[contains(@content-desc, 'Create')]"):
             self.logger.info("Navigated to the new post creation tab.")
         else:
             self.logger.error("Failed to navigate to the new post creation tab.")
@@ -128,24 +152,72 @@ class InstagramInteractions:
             return False
 
     def select_first_video(self, timeout=10):
+        xpath = "//android.widget.GridView[contains(@resource-id, 'gallery_recycler_view')]/android.view.ViewGroup"
         try:
-            if not self.device.xpath(self.xpath_config.video_thumbnails).wait(timeout):
-                self.logger.error(f"No video thumbnails found after waiting {timeout} seconds.")
-                return False
-            
-            first_video = self.device.xpath(self.xpath_config.video_thumbnails).get()
-            
-            if first_video is None:
-                self.logger.error("No videos available.")
-                return False
-            
-            first_video.click()
-            # self.logger.info("Clicked on the first video")
-            return True
-        
-        except Exception as e:
-            self.logger.error(f"Error while selecting the first video: {str(e)}")
+            for second in range(timeout):
+                elements = self.device.xpath(xpath).all()
+                if elements:
+                    self.logger.info(f"✅ Found {len(elements)} video thumbnails in grid")
+                    try:
+                        elements[0].click()
+                        self.logger.info("🎯 First video clicked successfully")
+                        return True
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to click first video: {e}")
+                        return False
+                time.sleep(1)
+
+            self.logger.error(f"No video thumbnails found after {timeout} seconds.")
             return False
+
+        except Exception as e:
+            self.logger.error(f"Exception during video selection: {e}", exc_info=True)
+            return False
+
+    def wait_for_posted_caption(self, caption: str, username: str, timeout=30, poll_interval=2) -> bool:
+        """
+        Waits for confirmation that the reel was posted by:
+        - Matching the caption prefix (40% match via starts-with or contains)
+        - Detecting the insights pill
+        - Matching the username profile picture element
+        """
+        if not caption:
+            self.logger.error("❌ No caption provided for reel post verification")
+            return False
+
+        if not username:
+            self.logger.error("❌ No username provided for fallback reel detection")
+            return False
+
+        trimmed_caption = caption.strip()[:40].replace('"', '').replace("'", "")
+        caption_xpath = f"//android.view.ViewGroup[starts-with(@content-desc, '{trimmed_caption}')]"
+        insights_xpath = "//android.view.ViewGroup[contains(@resource-id, 'clips_viewer_insights_pill')]"
+        profile_xpath = f"//android.widget.ImageView[contains(@content-desc, 'Profile picture of {username}') or contains(@content-desc, '{username}')]"
+
+        self.logger.info(f"🔍 Waiting for posted reel with caption prefix: '{trimmed_caption}' or username '{username}'")
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.device.xpath(caption_xpath).exists:
+                self.logger.info("✅ Caption detected in reel view")
+                return True
+
+            if self.device.xpath(insights_xpath).exists:
+                self.logger.info("✅ Reel insights pill detected")
+                return True
+
+            if self.device.xpath(profile_xpath).exists:
+                self.logger.info("✅ Username detected in posted reel")
+                return True
+
+            self.logger.debug("⏳ No match yet, polling again...")
+            time.sleep(poll_interval)
+
+        self.logger.error(f"❌ Reel post verification failed after {timeout} seconds")
+        return False
+
+
+
 
 
 class SoundAdder:
@@ -224,9 +296,11 @@ class SoundAdder:
 
 
             # Step 2a: Select trending tab
-            self.logger.info("🎛️ Step 2a: Clicking 'Trending' tab in audio selector...")
+            # Step 2a: Attempt to click 'Trending' tab (optional fallback if not found)
+            self.logger.info("🎛️ Step 2a: Attempting to click 'Trending' tab in audio selector...")
 
             max_retries = 3
+            trending_clicked = False
             for attempt in range(1, max_retries + 1):
                 try:
                     trending_selector = self.device.xpath("Trending")
@@ -235,16 +309,18 @@ class SoundAdder:
                         self.logger.debug(f"🧠 Attempt {attempt}: Found 'Trending' tab parent, clicking...")
                         trending_parent.click()
                         self.logger.info("✅ Clicked 'Trending' tab")
+                        trending_clicked = True
                         time.sleep(1)
                         break
                     else:
-                        self.logger.warning(f"⏳ Attempt {attempt}: 'Trending' tab not found yet")
+                        self.logger.debug(f"⏳ Attempt {attempt}: 'Trending' tab not found yet")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Attempt {attempt}: Exception during click: {e}")
                 time.sleep(1)
-            else:
-                self.logger.error("❌ Failed to click 'Trending' tab after multiple retries")
-                return False, "'Trending' tab parent not found", None
+
+            if not trending_clicked:
+                self.logger.warning("⚠️ 'Trending' tab not found after retries, continuing to track selection without it")
+
 
             # Step 2b: Swipe bottom sheet up
             self.logger.info("📈 Step 2b: Swiping up bottom sheet to reveal full list...")
@@ -279,9 +355,10 @@ class SoundAdder:
 
             # Step 3: Wait for and select a random track
             self.logger.info("🎼 Step 3: Waiting for track list and selecting a random track...")
-            if not self.device.xpath("//*[contains(@resource-id, 'content_list')]").wait(timeout=5):
+            if not self.device.xpath("//*[contains(@resource-id, 'content_list') or contains(@resource-id, 'preview_items')]").wait(timeout=5):
                 self.logger.error("❌ Track list not found")
                 return False, "Tracks list not found", None
+
 
             tracks = self.device.xpath("//*[contains(@resource-id, 'track_container')]").all()
             if not tracks:
@@ -308,7 +385,15 @@ class SoundAdder:
                 return False, "Failed to click Select Sound", None
             time.sleep(2)
 
-            logger.info("Scrubbing song")
+            self.logger.info("🎚️ Waiting for scrubber view to load before interaction...")
+            scrubber_xpath = "//*[contains(@resource-id, 'scrubber_recycler_view')]"
+            scrubber = self.device.xpath(scrubber_xpath)
+
+            if not scrubber.wait(timeout=10):
+                self.logger.error("❌ Scrubber view not loaded after waiting")
+                return False, "Scrubber view not loaded", song_info
+
+            self.logger.info("✅ Scrubber view loaded successfully")
             self.scrub_music()
 
             # Step 5: Confirm with 'Done'
@@ -318,8 +403,29 @@ class SoundAdder:
 
             # Step 6: Finalize post with 'Next'
             self.logger.info("📲 Step 6: Clicking 'Next' to finalize post")
-            self.insta_actions.click_by_xpath(self.xpath_config.next_button)
-            time.sleep(1)
+
+            next_button_xpath = "//android.widget.Button[@content-desc='Next']"
+            max_next_retries = 3
+
+            for attempt in range(1, max_next_retries + 1):
+                self.logger.info(f"🔁 Attempt {attempt}/{max_next_retries} to click 'Next'")
+
+                if not self.insta_actions.click_by_xpath(next_button_xpath):
+                    self.logger.warning("⚠️ Failed to click 'Next' on this attempt")
+                else:
+                    self.logger.info("✅ Clicked 'Next', checking if it disappears...")
+                    if self.device.xpath(next_button_xpath).wait_gone(timeout=5):
+                        self.logger.info("✅ 'Next' button disappeared — transition confirmed")
+                        break
+                    else:
+                        self.logger.warning("⚠️ 'Next' button still visible after click — retrying...")
+                
+                time.sleep(2)
+
+            else:
+                self.logger.error("❌ 'Next' button did not disappear after multiple attempts")
+                return False, "Next button stuck after retries", None
+
 
             self.logger.info("🎉 add_music_to_reel completed successfully")
             return True, "Successfully added music to reel", song_info
@@ -421,57 +527,29 @@ class SoundAdder:
         except Exception as e:
             self.logger.error(f"❌ Failed to scrub music with gesture: {e}", exc_info=True)
             return False
-
-
-
-
 if __name__ == "__main__":
-    logger = setup_logger(__name__)
+    import uiautomator2 as u2
+    import logging
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    # Replace with your actual test username and caption
+    TEST_USERNAME = "madicyntaylor811"
+    TEST_CAPTION = "🌹 Just a little mischief and a whole lot of charm..."
+
+    logger.info("🧪 Starting test: wait_for_posted_caption")
+
     device = u2.connect()
+    logger.info(f"📱 Connected to device: {device.serial}")
 
-    PACKAGE_NAME = "com.instagram.androie"
+    from UploadBot.instagram_actions import InstagramInteractions
+    insta = InstagramInteractions(device, app_package="com.instagram.android", airtable_manager=None)
 
-    logger.info("🚀 Starting test: randomly_scrub_music_position")
+    result = insta.wait_for_posted_caption(caption=TEST_CAPTION, username=TEST_USERNAME, timeout=45)
 
-    try:
-        # No popup handling, no Airtable or login needed
-        interactions = InstagramInteractions(device, app_package=PACKAGE_NAME, airtable_manager=None)
-        sound_adder = SoundAdder(device=device, app_package=PACKAGE_NAME, insta_actions=interactions)
+    if result:
+        logger.info("✅ Test passed: Reel confirmed posted.")
+    else:
+        logger.error("❌ Test failed: Could not verify posted reel.")
 
-        success = sound_adder.scrub_music()
-
-        if success:
-            logger.info("✅ Scrub music test passed")
-        else:
-            logger.error("❌ Scrub music test failed")
-
-    except Exception as e:
-        logger.error(f"💥 Exception during scrub test: {e}", exc_info=True)
-
-# Full main testing function
-# if __name__ == "__main__":
-#     logger = setup_logger(__name__)
-#     device = u2.connect()
-#
-#     PACKAGE_NAME = "com.instagram.androie"
-#
-#     logger.info("🚀 Starting test: add_music_to_reel with Trending watcher")
-#
-#     try:
-#
-#         popup_handler = PopupHandler(device)
-#         interactions = InstagramInteractions(device, app_package=PACKAGE_NAME, airtable_manager=None)
-#         sound_adder = SoundAdder(device=device, app_package=PACKAGE_NAME, insta_actions=interactions)
-#         popup_handler.register_watchers()
-#
-#         success, msg, song_info = sound_adder.add_music_to_reel()
-#
-#         device.watcher.stop()  # stop watching once done
-#
-#         if success:
-#             logger.info(f"✅ Music added successfully: {song_info}")
-#         else:
-#             logger.error(f"❌ Failed to add music: {msg}")
-#
-#     except Exception as e:
-#         logger.error(f"💥 Exception during test: {e}", exc_info=True)

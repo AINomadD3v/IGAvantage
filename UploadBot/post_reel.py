@@ -4,9 +4,9 @@ import time
 import uiautomator2 as u2
 from typing import Tuple, Optional
 
-from .device_manager import MediaCleaner
-from .instagram_actions import InstagramInteractions, SoundAdder
-from .content_management import ContentManager
+from UploadBot.device_manager import MediaCleaner
+from UploadBot.instagram_actions import InstagramInteractions, SoundAdder
+from UploadBot.content_management import ContentManager
 from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
 from Shared.generate_caption import generate_and_enter_caption  
@@ -106,23 +106,28 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
             return False, "'New reel' screen not detected"
         logger.info("✅ 'New reel' screen confirmed")
 
-        # Step 8: Select first video
-        logger.info("🎞️ Selecting first video...")
-        if not insta_actions.select_first_video():
-            return False, "Failed to select first video"
-        time.sleep(2)
 
-        # Step 9: Wait for 'Add audio' screen
-        logger.info("🕒 Waiting for 'Add audio' button to confirm editor loaded...")
-        add_audio_button = device.xpath("Add audio")
-        if not add_audio_button.wait(timeout=5):
-            logger.warning("⚠️ 'Add audio' button not found. Retrying video selection...")
+        # Step 8-9: Retry loop for video selection + editor load
+        max_video_select_retries = 3
+        for attempt in range(1, max_video_select_retries + 1):
+            logger.info(f"🎞️ Attempt {attempt}/{max_video_select_retries} to select first video and wait for editor...")
+
             if not insta_actions.select_first_video():
-                return False, "Retry failed: could not select video"
+                logger.warning("⚠️ Video selection failed")
+                time.sleep(2)
+                continue
+
             time.sleep(2)
-            if not add_audio_button.wait(timeout=5):
-                return False, "'Add audio' button not found after retry"
-        logger.info("✅ 'Add audio' screen confirmed")
+            add_audio_button = device.xpath("Add audio")
+            if add_audio_button.wait(timeout=5):
+                logger.info("✅ 'Add audio' screen confirmed")
+                break
+            else:
+                logger.warning("⚠️ 'Add audio' button not found, retrying...")
+                time.sleep(2)
+        else:
+            return False, "'Add audio' button not found after retries"
+
 
         # Step 10: Add music
         logger.info("🎵 Adding sound to reel...")
@@ -180,6 +185,11 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
         logger.info("✅ Reel shared successfully!")
         time.sleep(5)
 
+        # Step 12.5: Confirm reel was actually posted
+        logger.info("⏳ Waiting for posted reel to appear using caption...")
+        if not insta_actions.wait_for_posted_caption(caption, username=account_name):
+            return False, "Reel posted screen did not show expected caption"
+
         # Step 13: Update Airtable
         fields_to_update = {
             'Posted?': True,
@@ -194,6 +204,11 @@ def post_reel(record: dict, PROJECT_ROOT: str, airtable_client: AirtableClient) 
         album_path = f"/sdcard/Pictures/{account_name}"
         media_cleaner = MediaCleaner()
         media_cleaner.clean_posted_media(album_path)
+
+        # Step 15: Close the Instagram app
+        logger.info("🛑 Closing Instagram app")
+        device.app_stop(package_name)
+
 
         if airtable_success:
             return True, "✅ Reel posted and Airtable updated"
@@ -251,22 +266,30 @@ def test_click_next_button(device):
         logger.error(f"❌ Exception during Next button test: {e}", exc_info=True)
         return False
 
-
-# if __name__ == "__main__":
-#     logger = setup_logger(__name__)
-#     device = u2.connect()
-#
-#     logger.info("🚀 Starting test: share button click")
-#     test_click_next_button(device)
-
 def main():
-    logger.info("🚀 Starting full Instagram reel posting flow...")
+    model_map = {
+        "1": "alexis",
+        "2": "maddison"
+    }
 
+    print("Available models:")
+    for k, v in model_map.items():
+        print(f"{k}. {v}")
+
+    selection = input("Select a model to process (enter number): ").strip()
+    model = model_map.get(selection)
+
+    if not model:
+        logger.error("❌ Invalid selection. Exiting.")
+        return
+
+    logger.info(f"🚀 Starting Instagram reel posting flow for model: {model}")
+    airtable_client = AirtableClient(model_name=model)
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     device = u2.connect()
     logger.info(f"📱 Connected to device: {device.serial}")
 
-    airtable_client = AirtableClient()
     record = airtable_client.get_single_unposted_record()
     if not record:
         logger.error("❌ No unposted record found.")
@@ -283,7 +306,5 @@ def main():
     else:
         logger.error(f"❌ Failure: {message}")
 
-
 if __name__ == "__main__":
     main()
-

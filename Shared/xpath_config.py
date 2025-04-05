@@ -56,9 +56,6 @@ class InstagramXPaths:
     def media_music_button(self):
         return f"//android.widget.ImageView[@resource-id='{self.package_name}:id/media_music_button']"
 
-    @property
-    def video_thumbnails(self):
-        return f"//android.widget.GridView[@resource-id='{self.package_name}:id/gallery_recycler_view']/android.view.ViewGroup[1]"
 
     @property
     def story_avatar(self):
