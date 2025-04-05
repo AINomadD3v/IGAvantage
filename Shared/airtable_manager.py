@@ -115,22 +115,25 @@ class AirtableClient:
     def get_unposted_records_for_today(self, max_count: int = 1):
         try:
             logger.info(f"📥 Fetching up to {max_count} unposted records for today...")
+
             table = self.api.table(self.base_id, self.table_id)
             records = table.all(view=self.view_name)
+
             bogota = pytz.timezone("America/Bogota")
-            today = datetime.now(bogota).date()
+            today_str = datetime.now(bogota).strftime("%Y-%m-%d")  # e.g., '2025-04-05'
 
             matching = []
+
             for record in records:
                 fields = record.get("fields", {})
                 schedule_raw = fields.get("Schedule Date")
                 if not schedule_raw:
                     continue
-                try:
-                    scheduled_dt = datetime.fromisoformat(schedule_raw.replace("Z", "+00:00"))
-                    if scheduled_dt.astimezone(bogota).date() != today:
-                        continue
-                except Exception:
+
+                # Airtable returns ISO format like '2025-04-06T00:00:00.000Z'
+                scheduled_date = schedule_raw.split("T")[0]  # Just the 'YYYY-MM-DD' part
+
+                if scheduled_date != today_str:
                     continue
 
                 username = fields.get("Username")
@@ -151,9 +154,11 @@ class AirtableClient:
                     break
 
             return matching
+
         except Exception as e:
             logger.error(f"❌ Error fetching multiple unposted records: {e}", exc_info=True)
             return []
+
 
 
 
@@ -162,11 +167,11 @@ class AirtableClient:
         Marks 'Something Went Wrong?' = True in Airtable, logs it, and returns a signal to rotate account.
         """
         try:
-            self.update_record_fields(record_id, {'Something Went Wrong?': True})
-            logger.warning(f"⚠️ Marked record {record_id} as 'Something Went Wrong?' = True")
+            self.update_record_fields(record_id, {'Something Went Wrong': True})
+            logger.warning(f"⚠️ Marked record {record_id} as 'Something Went Wrong' = True")
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to mark record {record_id} with 'Something Went Wrong?': {e}")
+            logger.error(f"❌ Failed to mark record {record_id} with 'Something Went Wrong': {e}")
             return False
 
     def update_record_fields(self, record_id: str, fields: dict):
@@ -176,7 +181,7 @@ class AirtableClient:
         try:
             table = self.api.table(self.base_id, self.table_id)
             result = table.update(record_id, fields, typecast=True)
-            logger.info(f"✅ Updated record {record_id} with fields: {fields}")
+            logger.debug(f"✅ Updated record {record_id} with fields: {fields}")
             return result
         except Exception as e:
             logger.error(f"❌ Failed to update record: {e}")

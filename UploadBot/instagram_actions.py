@@ -30,7 +30,7 @@ class InstagramInteractions:
         Waits for the app to finish launching and be ready for UI inspection.
         Retries XPath inspection with backoff in case Accessibility is not ready yet.
         """
-        self.logger.info("🕵️ Waiting for app UI to become inspectable...")
+        self.logger.debug("🕵️ Waiting for app UI to become inspectable...")
 
         for attempt in range(1, retries + 1):
             try:
@@ -51,7 +51,7 @@ class InstagramInteractions:
     def open_app(self) -> bool:
 
         try:
-            logger.info(f"🚀 Launching app via adb am start: {self.app_package}")
+            logger.debug(f"🚀 Launching app via adb am start: {self.app_package}")
 
             # Strip whitespace in case Airtable value or env had extra space
             clean_package = self.app_package.strip()
@@ -69,7 +69,7 @@ class InstagramInteractions:
                 current = self.device.app_current()
                 logger.debug(f"[{attempt+1}/10] Foreground app: {current}")
                 if current.get("package") == clean_package:
-                    logger.info("✅ App is now in foreground")
+                    logger.debug("✅ App is now in foreground")
                     return True
                 time.sleep(1.0)
 
@@ -79,11 +79,6 @@ class InstagramInteractions:
         except Exception as e:
             logger.error(f"❌ Failed to launch app {self.app_package}: {e}", exc_info=True)
             return False
-
-
-
-
-
 
     def click_by_xpath(self, xpath, timeout=10):
         try:
@@ -211,7 +206,7 @@ class InstagramInteractions:
         insights_xpath = "//android.view.ViewGroup[contains(@resource-id, 'clips_viewer_insights_pill')]"
         profile_xpath = f"//android.widget.ImageView[contains(@content-desc, 'Profile picture of {username}') or contains(@content-desc, '{username}')]"
 
-        self.logger.info(f"🔍 Waiting to verify Reel was posted")
+        self.logger.debug(f"🔍 Waiting to verify Reel was posted")
 
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -251,7 +246,7 @@ class InstagramInteractions:
                 subprocess.run(["adb", "shell", "am", "force-stop", pkg], check=True)
                 self.logger.debug("✅ App stopped via ADB fallback")
             else:
-                self.logger.info("✅ App stopped successfully via u2")
+                self.logger.debug("✅ App stopped successfully via u2")
 
             return True
         except Exception as e:
@@ -426,18 +421,18 @@ class SoundAdder:
                 self.logger.error("❌ Scrubber view not loaded after waiting")
                 return False, "Scrubber view not loaded", song_info
 
-            self.logger.info("✅ Scrubber view loaded successfully")
+            self.logger.debug("✅ Scrubber view loaded successfully")
             self.scrub_music()
 
             # Step 5: Confirm with 'Done'
-            self.logger.info("✅ Step 5: Clicking 'Done'")
+            self.logger.debug("✅ Step 5: Clicking 'Done'")
             self.insta_actions.click_by_xpath(self.xpath_config.click_done)
             time.sleep(2)
 
             # Step 6: Finalize post with 'Next'
-            self.logger.info("📲 Step 6: Clicking 'Next' to finalize post")
+            self.logger.debug("📲 Step 6: Clicking 'Next' to finalize post")
             next_button_xpath = "//android.widget.Button[@content-desc='Next']"
-            max_next_retries = 3
+            max_next_retries = 20
 
             for attempt in range(1, max_next_retries + 1):
                 self.logger.debug(f"🔁 Attempt {attempt}/{max_next_retries} to click 'Next'")
@@ -445,27 +440,25 @@ class SoundAdder:
                 if not self.insta_actions.click_by_xpath(next_button_xpath):
                     self.logger.warning("⚠️ Failed to click 'Next' on this attempt")
                 else:
-                    self.logger.info("✅ Clicked 'Next', checking if it disappears...")
+                    self.logger.debug("✅ Clicked 'Next', checking if it disappears...")
                     if self.device.xpath(next_button_xpath).wait_gone(timeout=5):
                         self.logger.info("✅ 'Next' button disappeared — transition confirmed")
                         break
                     else:
                         self.logger.warning("⚠️ 'Next' button still visible after click — retrying...")
 
-                time.sleep(2)
+                time.sleep(4)
 
             else:
                 self.logger.error("❌ 'Next' button did not disappear after multiple attempts")
                 return False, "Next button stuck after retries", None
 
-            self.logger.info("🎉 add_music_to_reel completed successfully")
+            self.logger.debug("🎉 add_music_to_reel completed successfully")
             return True, "Successfully added music to reel", song_info
 
         except Exception as e:
             self.logger.error(f"💥 Exception in add_music_to_reel: {str(e)}", exc_info=True)
             return False, f"Error occurred: {str(e)}", None
-
-
 
     def parse_track_info(self, content_desc: str) -> Dict[str, str]:
         try:
@@ -521,7 +514,7 @@ class SoundAdder:
             screen_height = self.device.info["displayHeight"]
 
             gesture_count = random.randint(2, 4)  # realistic adjustment attempts
-            self.logger.info(f"🔁 Performing {gesture_count} gesture(s)")
+            self.logger.debug(f"🔁 Performing {gesture_count} gesture(s)")
 
             for g in range(gesture_count):
                 direction = random.choice(["left", "right"])

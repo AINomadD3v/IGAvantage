@@ -17,7 +17,6 @@ logger = setup_logger(__name__)
 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, src_path)
 
-
 class GenerateCaption:
     def __init__(self, device, app_package: str, post_type: str, logger, device_id: str = None):
         self.device = device
@@ -69,23 +68,30 @@ class GenerateCaption:
         return ratio > 0.9
 
     def write_caption(self) -> Optional[str]:
-        self.logger.info("🧠 Generating AI caption...")
-        caption = generate_caption()
-        self.logger.info(f"💬 AI Caption: {caption}")
-
+        # Step 1: Wait for and click caption field
+        time.sleep(2)
         field = self.wait_for_caption_field()
         if not field:
             return None
 
+        self.device.watcher.run()
         field.click()
+        self.logger.debug("✅ Caption input field clicked.")
         time.sleep(1)
 
+        # Step 2: Generate caption
+        self.logger.debug("🧠 Generating AI caption...")
+        caption = generate_caption()
+        # self.logger.info(f"💬 AI Caption: {caption}")
+
+        # Step 3: Type caption
         self.type_caption(caption)
 
-        # Hide keyboard to reveal next button
+        # Step 4: Hide keyboard to reveal "Next"
         self.device.press("back")
         time.sleep(2)
 
+        # Step 5: Verify caption
         verified_text = self.get_caption_text()
         if not self.captions_are_similar(caption, verified_text):
             self.logger.warning("⚠️ Caption text mismatch after typing")
@@ -94,7 +100,6 @@ class GenerateCaption:
             self.logger.info("✅ Caption text verified successfully")
 
         return caption
-
 
 def generate_and_enter_caption(device, app_package: str, post_type: str = "reel", device_id: Optional[str] = None) -> Optional[str]:
     try:
@@ -110,7 +115,6 @@ def generate_and_enter_caption(device, app_package: str, post_type: str = "reel"
     except Exception as e:
         logger.error(f"💥 Error in caption entry: {str(e)}", exc_info=True)
         return None
-
 
 def main():
     device = u2.connect()
@@ -130,5 +134,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

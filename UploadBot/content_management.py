@@ -136,7 +136,7 @@ class ContentManager:
 
             for cmd in scan_cmds:
                 scan_result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                self.logger.info(f"📣 Media scan attempted: {cmd}")
+                self.logger.debug(f"📣 Media scan attempted: {cmd}")
                 self.logger.debug(f"Scan output: {scan_result.stdout.strip()}")
 
             return True, remote_path
