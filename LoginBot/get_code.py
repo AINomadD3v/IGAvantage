@@ -1,18 +1,13 @@
 # get_code.py
 
-import os
-from airtable_management import AirtableClient
+from Shared.airtable_manager import AirtableClient
 import re
 import uiautomator2 as u2
 import time
 import logging
-import cv2
-import numpy as np
-from PIL import Image
 from Shared.logger_config import setup_logger
 from Shared.stealth_typing import StealthTyper
-from popup_handler import PopupHandler
-from new_identity import new_identity
+from Shared.popup_handler import PopupHandler
 from Shared.ui_helper import UIHelper
 
 logger = setup_logger(__name__)

@@ -2,12 +2,11 @@ import uiautomator2 as u2
 import os
 import subprocess
 import time
-from get_code import FirefoxAutomation, EmailNavigation, TwoFactorTokenRetriever, UIHelper
+from get_code import FirefoxAutomation, UIHelper
 from instagram_automation import InstagramAutomation
 from Shared.stealth_typing import StealthTyper
 from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
-from new_identity import new_identity
 
 
 logger = setup_logger(__name__)
@@ -286,6 +285,9 @@ if __name__ == "__main__":
             logger.warning("⚠️ Identity reset failed or notification not found")
     else:
         logger.info("✅ No identity reset needed (account not banned)")
+
+# TESTING
+
 # def test_2fa_code_entry_only(d, code="434558"):
 #     from stealth_typing import StealthTyper
 #     from ui_helper import UIHelper

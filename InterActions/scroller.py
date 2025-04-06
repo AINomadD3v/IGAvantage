@@ -5,13 +5,12 @@ import uiautomator2 as u2
 from Shared.ui_helper import UIHelper
 from Shared.logger_config import setup_logger
 from Shared.stealth_typing import StealthTyper
+from Shared.airtable_manager import AirtableClient
 
 logger = setup_logger(name='Scroller')
 
 KEYWORDS = ["model", "fitness", "bikini", "gym girl", "fit girls", "fitness model" ]
 
-
-setup_logger(name=__name__)
 CONFIG = {
     # Delay ranges (in seconds)
     "delays": {
@@ -41,6 +40,12 @@ CONFIG = {
     # Package name
     "package_name": "com.instagram.androig",
 }
+
+def force_stop_app(device, package_name):
+    logger.info(f"🧹 Force-stopping {package_name}")
+    device.app_stop(package_name)
+    device.shell(f"am force-stop {package_name}")
+    time.sleep(1)  # Let Android finalize cleanup
 
 def random_delay(label):
     lo, hi = CONFIG["delays"].get(label, (1, 2))
@@ -370,9 +375,29 @@ def perform_keyword_search(device, keyword):
         logger.error(f"❌ Failed during keyword search flow: {e}")
         return False
 
-def main():
-    d = u2.connect()
+def run_warmup_session(device_id, package_name):
+    d = u2.connect(device_id)
+    CONFIG["package_name"] = package_name
     ui = UIHelper(d)
+
+    logger.info(f"📱 Launching Instagram app: {package_name}")
+    try:
+        # Ensure clean start
+        d.app_stop(package_name)
+        d.app_start(package_name)
+
+        explore_xpath = '//android.widget.FrameLayout[@content-desc="Search and explore"]'
+        if not d.xpath(explore_xpath).wait(timeout=15.0):
+            logger.warning("⚠️ Explore tab not found — trying fallback ADB launch...")
+            d.shell(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+            if not d.xpath(explore_xpath).wait(timeout=15.0):
+                raise RuntimeError("Instagram app did not load UI after fallback")
+
+        logger.info("✅ Instagram UI ready — Explore tab found")
+    except Exception as e:
+        logger.error(f"❌ Failed to launch Instagram app: {e}")
+        return
+
     seen_hashes = set()
     all_reels = []
     session_stats = []
@@ -383,6 +408,7 @@ def main():
 
     keyword = random.choice(KEYWORDS)
     logger.info(f"🎯 Chosen keyword: '{keyword}'")
+
     if not perform_keyword_search(d, keyword):
         logger.error("🚫 Keyword search failed. Exiting.")
         return
@@ -397,9 +423,9 @@ def main():
             break
 
         logger.info(f"Scroll iteration {i + 1}")
-
         retries = 0
         reels = []
+
         while retries < 3:
             all_detected = extract_search_page_reels(d)
             reels = [r for r in all_detected if r["id"] not in seen_hashes]
@@ -415,12 +441,11 @@ def main():
             break
 
         logger.info(f"New reels: {len(reels)}")
-
         num_to_process = max(1, int(len(reels) * CONFIG["percent_reels_to_watch"]))
         to_process = random.sample(reels, num_to_process)
 
         for reel in to_process:
-            logger.info(f"Selected reel [{reel['short_id']}] to process")
+            logger.info(f"🎬 Processing reel [{reel['short_id']}]")
             result = process_reel(d, reel, ui, CONFIG["like_probability"], stop_callback=None)
 
             seen_hashes.add(reel["id"])
@@ -440,7 +465,7 @@ def main():
         random_delay("before_scroll")
         ui.scroll_up()
 
-    logger.info(f"✅ Session complete. Total unique reels interacted: {len(all_reels)}")
+    logger.info(f"✅ Warmup complete. Total unique reels interacted: {len(all_reels)}")
 
     total_liked = sum(1 for r in session_stats if r.get("liked"))
     total_comments = sum(1 for r in session_stats if r.get("commented"))
@@ -453,12 +478,41 @@ def main():
     for r in session_stats:
         logger.info(f"     @{r['username']}: liked={r['liked']}, comments={r['commented']}, likes='{r['likes']}', reshares='{r['reshares']}'")
 
-    # Optional: save stats to JSON
-    # import json
-    # from datetime import datetime
-    # with open(f"session_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json", "w") as f:
-    #     json.dump(session_stats, f, indent=2)
+     # 🧹 Fully terminate the app before returning
+    force_stop_app(d, package_name)
 
+
+def main():
+    client = AirtableClient(table_key="warmup_accounts")
+    warmup_records = client.get_pending_warmup_records()
+
+    logger.info(f"📦 Starting warmup session for {len(warmup_records)} accounts")
+
+    last_package = None
+
+    for record in warmup_records:
+        username = record["username"]
+        device_id = record["device_id"]
+        package_name = record["package_name"]
+        record_id = record["record_id"]
+
+        logger.info(f"🚀 Running warmup for @{username} on {device_id} ({package_name})")
+
+        try:
+            if last_package and last_package != package_name:
+                logger.info(f"🧹 Stopping previous app: {last_package}")
+                d = u2.connect(device_id)
+                d.app_stop(last_package)
+                time.sleep(1)
+
+            run_warmup_session(device_id=device_id, package_name=package_name)
+            client.update_record_fields(record_id, {"Daily Warmup Complete": True})
+            logger.info(f"✅ Warmup complete and marked for @{username}")
+            last_package = package_name
+
+        except Exception as e:
+            logger.error(f"❌ Warmup failed for @{username}: {e}")
+            client.update_record_fields(record_id, {"Warmup Errors": str(e)})
 
 
 if __name__ == "__main__":

@@ -13,105 +13,44 @@ logger = setup_logger(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class AirtableClient:
-    def __init__(self, model_name: str = "alexis"):
+    def __init__(self, table_key: str = "content_alexis"):
         self.api_key = os.getenv("AIRTABLE_API_KEY")
-        
-        model_map = {
-            "alexis": {
+        if not self.api_key:
+            raise ValueError("Missing AIRTABLE_API_KEY in environment variables")
+
+        table_map = {
+            "content_alexis": {
                 "base_id": os.getenv("ALEXIS_BASE_ID"),
-                "table_id": os.getenv("ALEXIS_CONTENT_TABLE_ID")
+                "table_id": os.getenv("ALEXIS_CONTENT_TABLE_ID"),
+                "view": "Unposted"
             },
-            "maddison": {
+            "content_maddison": {
                 "base_id": os.getenv("MADDISON_BASE_ID"),
-                "table_id": os.getenv("MADDISON_CONTENT_TABLE_ID")
+                "table_id": os.getenv("MADDISON_CONTENT_TABLE_ID"),
+                "view": "Unposted"
+            },
+            "warmup_accounts": {
+                "base_id": os.getenv("IG_ARMY_BASE_ID"),
+                "table_id": os.getenv("IG_ARMY_WARMUP_ACCOUNTS_TABLE_ID"),
+                "view": "Warmup"
             }
         }
 
-        if model_name not in model_map:
-            raise ValueError(f"Unsupported model name: {model_name}")
-        
-        model_config = model_map[model_name]
-        self.base_id = model_config["base_id"]
-        self.table_id = model_config["table_id"]
-        self.view_name = "Unposted"
+        if table_key not in table_map:
+            raise ValueError(f"Unsupported table key: '{table_key}'")
 
-        if not all([self.api_key, self.base_id, self.table_id]):
-            raise ValueError("Missing required environment variables")
+        config = table_map[table_key]
+        self.base_id = config["base_id"]
+        self.table_id = config["table_id"]
+        self.view_name = config["view"]
+
+        if not all([self.base_id, self.table_id, self.view_name]):
+            raise ValueError(f"Missing required environment variables for table key: '{table_key}'")
 
         self.api = Api(self.api_key)
 
-    # --------- Posting System (from airtable_client.py) --------- #
-    def get_single_unposted_record(self):
-        """
-        Pull a single unposted record from Airtable with required fields,
-        where 'Schedule Date' matches today's local date (America/Bogota).
-        """
-        try:
-            logger.info("Fetching a single unposted record...")
-            table = self.api.table(self.base_id, self.table_id)
-
-            fields = [
-                'Username', 'Package Name',
-                'Drive URL', 'Schedule Date'
-            ]
-
-            records = table.all(view=self.view_name, fields=fields)
-
-            if not records:
-                logger.warning("No unposted records found.")
-                return None
-
-            # Timezone-aware local date (Bogota)
-            bogota = pytz.timezone("America/Bogota")
-            today = datetime.now(bogota).date()
-
-            logger.info(f"📅 Looking for records with Schedule Date = {today.isoformat()}")
-
-            for record in records:
-                data = record.get("fields", {})
-                username = data.get("Username")
-                schedule_raw = data.get("Schedule Date")
-
-                logger.debug(f"👀 Checking record: {username} | Schedule Date raw: {schedule_raw}")
-
-                if not schedule_raw:
-                    logger.debug("⏭️ Skipping — no schedule date")
-                    continue
-
-                try:
-                    # Convert from Airtable UTC -> Bogota local date
-                    scheduled_dt = datetime.fromisoformat(schedule_raw.replace("Z", "+00:00"))
-                    scheduled_local_date = scheduled_dt.astimezone(bogota).date()
-                except ValueError:
-                    logger.warning(f"⚠️ Could not parse date: {schedule_raw}")
-                    continue
-
-                if scheduled_local_date != today:
-                    logger.debug(f"⏭️ Skipping — not scheduled for today ({scheduled_local_date} != {today})")
-                    continue
-
-                record_id = record.get("id")
-                raw_package = data.get("Package Name")
-                package_name = raw_package[0] if isinstance(raw_package, list) and raw_package else raw_package
-
-                logger.info(f"✅ Matched: {username} scheduled for {schedule_raw}")
-
-                return {
-                    "id": record_id,
-                    "fields": {
-                        "username": username,
-                        "package_name": package_name,
-                        "media_url": data.get("Drive URL"),
-                    },
-                }
-
-            logger.warning("⚠️ No matching records with today's schedule date.")
-            return None
-
-        except Exception as e:
-            logger.error(f"❌ Error fetching unposted record: {e}", exc_info=True)
-            return None
     
+
     def get_unposted_records_for_today(self, max_count: int = 1):
         try:
             logger.info(f"📥 Fetching up to {max_count} unposted records for today...")
@@ -159,9 +98,6 @@ class AirtableClient:
             logger.error(f"❌ Error fetching multiple unposted records: {e}", exc_info=True)
             return []
 
-
-
-
     def mark_something_went_wrong_and_rotate(self, record_id: str):
         """
         Marks 'Something Went Wrong?' = True in Airtable, logs it, and returns a signal to rotate account.
@@ -186,15 +122,6 @@ class AirtableClient:
         except Exception as e:
             logger.error(f"❌ Failed to update record: {e}")
             return None
-
-    # --------- Account Rotation System (from original airtable_management.py) --------- #
-    def get_table_records(self, base_id, table_name):
-        try:
-            table = self.api.table(base_id, table_name)
-            return table.all()
-        except Exception as e:
-            logger.error(f"Error fetching records: {str(e)}")
-            return []
 
     def get_single_active_account(self, base_id, table_name, unused_view_id):
         try:
@@ -239,3 +166,47 @@ class AirtableClient:
         except Exception as e:
             logger.error(f"❌ Failed to update Airtable record: {e}")
             return None
+
+    def get_pending_warmup_records(self, max_count=None):
+        """
+        Fetch records that are in 'Warmup' status and not yet marked complete.
+        """
+        table = self.api.table(self.base_id, self.table_id)
+        records = table.all(view="Warmup")
+
+        result = []
+        for record in records:
+            fields = record.get("fields", {})
+            if fields.get("Status") != "Warmup":
+                continue
+            if fields.get("Daily Warmup Complete") is True:
+                continue
+
+            def flatten(value):
+                if isinstance(value, list) and value:
+                    return value[0]
+                return value
+
+            result.append({
+                "record_id": record["id"],
+                "username": flatten(fields.get("Username")),
+                "device_id": flatten(fields.get("Device ID")),
+                "package_name": flatten(fields.get("Package Name")),
+            })
+
+            if max_count and len(result) >= max_count:
+                break
+
+        return result
+
+
+if __name__ == "__main__":
+    from pprint import pprint
+
+    client = AirtableClient(table_key="warmup_accounts")  # model_name not needed anymore
+    warmup_records = client.get_pending_warmup_records()
+
+    print(f"🔍 Found {len(warmup_records)} warmup records pending:")
+    for record in warmup_records:
+        pprint(record)
+

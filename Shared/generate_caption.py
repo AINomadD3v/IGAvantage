@@ -28,12 +28,12 @@ class GenerateCaption:
         self.stealth_typer = StealthTyper(device_id=device_id)
 
     def wait_for_caption_field(self, timeout=10):
-        self.logger.info("🕵️ Waiting for caption input field...")
+        self.logger.debug("🕵️ Waiting for caption input field...")
         field = self.device.xpath("//*[contains(@resource-id, 'caption_input_text_view')]")
         if not field.wait(timeout=timeout):
             self.logger.error("❌ Caption input field not found.")
             return None
-        self.logger.info("✅ Caption input field found.")
+        self.logger.debug("✅ Caption input field found.")
         return field
 
     def type_caption(self, caption: str):
