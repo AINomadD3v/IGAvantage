@@ -13,41 +13,47 @@ logger = setup_logger(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class AirtableClient:
-    def __init__(self, table_key: str = "content_alexis"):
+    def __init__(self, table_key: str = None):
         self.api_key = os.getenv("AIRTABLE_API_KEY")
         if not self.api_key:
             raise ValueError("Missing AIRTABLE_API_KEY in environment variables")
 
-        table_map = {
-            "content_alexis": {
-                "base_id": os.getenv("ALEXIS_BASE_ID"),
-                "table_id": os.getenv("ALEXIS_CONTENT_TABLE_ID"),
-                "view": "Unposted"
-            },
-            "content_maddison": {
-                "base_id": os.getenv("MADDISON_BASE_ID"),
-                "table_id": os.getenv("MADDISON_CONTENT_TABLE_ID"),
-                "view": "Unposted"
-            },
-            "warmup_accounts": {
-                "base_id": os.getenv("IG_ARMY_BASE_ID"),
-                "table_id": os.getenv("IG_ARMY_WARMUP_ACCOUNTS_TABLE_ID"),
-                "view": "Warmup"
-            }
-        }
-
-        if table_key not in table_map:
-            raise ValueError(f"Unsupported table key: '{table_key}'")
-
-        config = table_map[table_key]
-        self.base_id = config["base_id"]
-        self.table_id = config["table_id"]
-        self.view_name = config["view"]
-
-        if not all([self.base_id, self.table_id, self.view_name]):
-            raise ValueError(f"Missing required environment variables for table key: '{table_key}'")
-
         self.api = Api(self.api_key)
+
+        # These can now be manually assigned later
+        self.base_id = None
+        self.table_id = None
+        self.view_name = None
+
+        if table_key:
+            table_map = {
+                "content_alexis": {
+                    "base_id": os.getenv("ALEXIS_BASE_ID"),
+                    "table_id": os.getenv("ALEXIS_CONTENT_TABLE_ID"),
+                    "view": "Unposted"
+                },
+                "content_maddison": {
+                    "base_id": os.getenv("MADDISON_BASE_ID"),
+                    "table_id": os.getenv("MADDISON_CONTENT_TABLE_ID"),
+                    "view": "Unposted"
+                },
+                "warmup_accounts": {
+                    "base_id": os.getenv("IG_ARMY_BASE_ID"),
+                    "table_id": os.getenv("IG_ARMY_WARMUP_ACCOUNTS_TABLE_ID"),
+                    "view": "Warmup"
+                }
+            }
+
+            if table_key not in table_map:
+                raise ValueError(f"Unsupported table key: '{table_key}'")
+
+            config = table_map[table_key]
+            self.base_id = config["base_id"]
+            self.table_id = config["table_id"]
+            self.view_name = config["view"]
+
+            if not all([self.base_id, self.table_id, self.view_name]):
+                raise ValueError(f"Missing required environment variables for table key: '{table_key}'")
 
     
 
@@ -123,49 +129,61 @@ class AirtableClient:
             logger.error(f"❌ Failed to update record: {e}")
             return None
 
-    def get_single_active_account(self, base_id, table_name, unused_view_id):
+    def get_single_active_account(self, base_id: str, table_id: str, view_id: str):
+        """
+        Fetches a single active account from the specified Airtable base/table/view.
+        Returns record with normalized fields and IDs.
+        """
         try:
-            logger.info("Attempting to fetch active account...")
-            table = self.api.table(base_id, table_name)
+            logger.info("📡 Fetching active IG account from Airtable")
+            logger.info(f"🧾 Base: {base_id} | Table: {table_id} | View: {view_id}")
 
-            fields = ['Account', 'Password', 'Email', 'Email Password', 'Package Name']
-            records = table.all(view=unused_view_id, fields=fields, max_records=1)
+            table = self.api.table(base_id, table_id)
+            fields = ['Account', 'Password', 'Email', 'Email Password', 'Package Name', 'Device ID']
+
+            records = table.all(view=view_id, fields=fields, max_records=1)
 
             if not records:
                 logger.warning("⚠️ No active accounts found in view")
                 return None
 
             record = records[0]
-            record_id = record.get('id')
-            record_fields = record.get('fields', {})
+            record_id = record.get("id")
+            record_fields = record.get("fields", {})
 
-            raw_package = record_fields.get('Package Name')
-            record_fields['Package Name'] = raw_package[0] if isinstance(raw_package, list) and raw_package else None
+            # Normalize array fields
+            record_fields["Package Name"] = (
+                record_fields.get("Package Name", [None])[0]
+                if isinstance(record_fields.get("Package Name"), list)
+                else record_fields.get("Package Name")
+            )
+            record_fields["Device ID"] = (
+                record_fields.get("Device ID", [None])[0]
+                if isinstance(record_fields.get("Device ID"), list)
+                else record_fields.get("Device ID")
+            )
 
-            logger.info("✅ Active account found:")
-            logger.info(f"  Account: {record_fields.get('Account')}")
-            logger.info(f"  Package Name: {record_fields.get('Package Name')}")
+            logger.info("✅ Active IG account found:")
+            logger.info(f"  - Account: {record_fields.get('Account')}")
+            logger.info(f"  - Package: {record_fields.get('Package Name')}")
+            logger.info(f"  - Device:  {record_fields.get('Device ID')}")
+
             return {
-                'id': record_id,
-                'fields': record_fields
+                "id": record_id,
+                "fields": record_fields,
+                "base_id": base_id,
+                "table_id": table_id
             }
 
         except requests.exceptions.RequestException as api_error:
-            logger.error(f"API request failed: {str(api_error)}")
+            logger.error(f"❌ Airtable API request failed: {api_error}")
             return None
         except Exception as e:
-            logger.error(f"Error in get_single_active_account: {str(e)}")
+            logger.error(f"❌ Unexpected error: {e}")
             return None
 
-    def update_record(self, base_id, table_name, record_id, fields):
-        try:
-            table = self.api.table(base_id, table_name)
-            updated_record = table.update(record_id, fields)
-            logger.info(f"✅ Updated Airtable record {record_id}: {fields}")
-            return updated_record
-        except Exception as e:
-            logger.error(f"❌ Failed to update Airtable record: {e}")
-            return None
+
+
 
     def get_pending_warmup_records(self, max_count=None):
         """
@@ -199,14 +217,28 @@ class AirtableClient:
 
         return result
 
-
 if __name__ == "__main__":
-    from pprint import pprint
+    from Shared.airtable_manager import AirtableClient
+    import os
 
-    client = AirtableClient(table_key="warmup_accounts")  # model_name not needed anymore
-    warmup_records = client.get_pending_warmup_records()
+    logger.info("🔍 Testing get_single_active_account()...")
 
-    print(f"🔍 Found {len(warmup_records)} warmup records pending:")
-    for record in warmup_records:
-        pprint(record)
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    table_name = os.getenv("IG_ARMY_ACCOUNTS_TABLE_ID")
+    unused_view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
+
+    airtable_client = AirtableClient()
+    result = airtable_client.get_single_active_account(
+        base_id=base_id,
+        table_name=table_name,
+        unused_view_id=unused_view_id
+    )
+
+    if result:
+        print("✅ Record fetched successfully:")
+        print("Record ID:", result['id'])
+        for key, value in result['fields'].items():
+            print(f"  {key}: {value}")
+    else:
+        print("❌ No account returned.")
 

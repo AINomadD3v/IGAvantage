@@ -2,12 +2,19 @@ import uiautomator2 as u2
 import os
 import subprocess
 import time
-from get_code import FirefoxAutomation, UIHelper
-from instagram_automation import InstagramAutomation
+from Shared.ui_helper import UIHelper
+from .get_code import FirefoxAutomation
+from .instagram_automation import InstagramAutomation
 from Shared.stealth_typing import StealthTyper
 from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
 
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Ensure project root .env is loaded
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=env_path)
 
 logger = setup_logger(__name__)
 
@@ -39,25 +46,8 @@ def handle_save_login_prompt(d, helper, username=None, timeout=8):
 
         # TODO Clean up function, move to using the watchers for popups and pull out logic for 2fa
 
-def handle_login_and_2fa(d, username, password, package_name, email, email_password, airtable_client, record_id, base_id, table_name):
+def handle_2fa(d, username, password, package_name, email, email_password, airtable_client, record_id, base_id, table_name, interactive=False):
     try:
-        instagram = InstagramAutomation(d, package_name)
-        login_result = instagram.login_with_ocr(username, password)
-
-        if d.xpath('//android.widget.TextView[@resource-id="android:id/message"]').exists:
-            msg = d.xpath('//android.widget.TextView[@resource-id="android:id/message"]').get().attrib.get('text', '')
-            logger.error("Detected error message: %s", msg)
-            return "login_failed"
-
-        if d.xpath('//android.view.View[contains(@text, "incorrect")]').exists:
-            logger.error("Detected incorrect password error")
-            return "login_failed"
-
-        if not login_result:
-            logger.error("OCR-based login process failed")
-            return "login_failed"
-
-        airtable_client.update_record(base_id, table_name, record_id, {"Automation Used?": True})
         logger.info("2FA screen detected. Proceeding to retrieve 2FA code via Firefox")
 
         firefox = FirefoxAutomation(email=email, password=email_password)
@@ -73,10 +63,32 @@ def handle_login_and_2fa(d, username, password, package_name, email, email_passw
             logger.error("❌ Firefox login sequence failed")
             return "firefox_login_failed"
 
-        verification_code = firefox.token_retriever.get_2fa_code()
-        if not verification_code:
-            logger.error("❌ Failed to retrieve 2FA code")
-            return "2fa_failed"
+        if interactive:
+            logger.info("🧑‍💻 Waiting for user to manually enter 2FA code...")
+            verification_code = input("📩 Enter the 2FA code you received via email: ").strip()
+            if not verification_code or not verification_code.isdigit():
+                logger.error("❌ Invalid 2FA code entered")
+                return "2fa_failed"
+        else:
+            firefox = FirefoxAutomation(email=email, password=email_password)
+            if not firefox.launch_firefox():
+                logger.error("❌ Failed to launch Firefox")
+                return "firefox_launch_failed"
+
+            if not firefox.navigate_to_url("op.pl"):
+                logger.error("❌ Failed to navigate to op.pl")
+                return "oppl_navigation_failed"
+
+            if not firefox.perform_login_sequence():
+                logger.error("❌ Firefox login sequence failed")
+                return "firefox_login_failed"
+
+            verification_code = firefox.token_retriever.get_2fa_code()
+            if not verification_code:
+                logger.error("❌ Failed to retrieve 2FA code")
+                return "2fa_failed"
+
+
 
         d.app_start(package_name)
         logger.info("Switched back to Instagram app")
@@ -191,7 +203,10 @@ def handle_login_and_2fa(d, username, password, package_name, email, email_passw
             for xpath in story_xpath_variants:
                 if d.xpath(xpath).exists:
                     logger.info(f"✅ Story element matched: {xpath} — login + 2FA successful")
-                    airtable_client.update_record(base_id, table_name, record_id, {"Logged In?": True})
+                    airtable_client.base_id = base_id
+                    airtable_client.table_id = table_name
+                    airtable_client.update_record_fields(record_id, {"Logged In?": True})
+
                     return True
 
             time.sleep(2)
@@ -203,23 +218,45 @@ def handle_login_and_2fa(d, username, password, package_name, email, email_passw
         logger.error("Error during login and 2FA process: %s", e)
         return "exception"
 
+def launch_app_via_adb(device_id, package_name):
+    logger.info(f"🔧 Launching {package_name} via ADB (monkey shell)")
+    try:
+        subprocess.run([
+            "adb", "-s", device_id, "shell",
+            "monkey", "-p", package_name,
+            "-c", "android.intent.category.LAUNCHER", "1"
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ ADB launch failed: {e}")
+
 
 if __name__ == "__main__":
-    d = u2.connect()  # or pass in serial if needed
     result = None  # Track login outcome
 
     try:
         logger.info("🔍 Fetching email credentials from Airtable...")
+        # ✅ Always use these three keys
+        base_id = os.getenv("IG_ARMY_BASE_ID")
+        table_id = os.getenv("IG_ARMY_ACCOUNTS_TABLE_ID")
+        view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
+        logger.info(f"🔑 IG_ARMY_BASE_ID = {base_id}")
 
-        base_id = os.getenv("AIRTABLE_BASE_ID")
-        table_name = os.getenv("IG_ARMY_ACCOUNTS_TABLE_ID")
-        unused_view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
+
+        if not all([base_id, table_id, view_id]):
+            raise Exception("❌ Missing required IG Army env variables")
+
+        logger.info(f"📄 Using IG Army base_id={base_id}, table_id={table_id}, view_id={view_id}")
 
         airtable_client = AirtableClient()
+        # 💡 Set base_id + table_id explicitly for update_record_fields()
+        airtable_client.base_id = base_id
+        airtable_client.table_id = table_id
+
+
         account_data = airtable_client.get_single_active_account(
             base_id=base_id,
-            table_name=table_name,
-            unused_view_id=unused_view_id
+            table_id=table_id,
+            view_id=view_id
         )
 
         if not account_data:
@@ -232,36 +269,54 @@ if __name__ == "__main__":
         email = fields.get("Email")
         email_password = fields.get("Email Password")
         package_name = fields.get("Package Name")
+        device_id = fields.get("Device ID")  # 🔐 New field
 
-        if not all([username, password, email, email_password]):
+        if not all([username, password, email, email_password, device_id]):
             raise Exception("❌ Missing required fields in Airtable record")
 
-        logger.info(f"✅ Starting automation for {username}")
+        logger.info(f"📱 Connecting to device {device_id}")
+        d = u2.connect(device_id)
+        logger.info(f"✅ Starting automation for {username} on device {device_id}")
 
-        # Try to get package name from Airtable, otherwise ask user to pick one
-        if not package_name:
-            logger.info("📦 No package name found in Airtable. Prompting user to select one...")
-            package_name = select_instagram_package()
-            if not package_name:
-                raise Exception("❌ No Instagram package selected. Aborting.")
+        logger.info(f"🚀 Attempting to launch Instagram clone: {package_name}")
+        launch_app_via_adb(device_id, package_name)
+        time.sleep(4)
 
-        logger.info(f"Launching Clone {package_name}")
-        d.app_start(package_name)
-        time.sleep(5)
-
-        # Run login + 2FA
-        result = handle_login_and_2fa(
-            d=d,
-            username=username,
-            password=password,
+        automation = InstagramAutomation(
+            d,
             package_name=package_name,
-            email=email,
-            email_password=email_password,
             airtable_client=airtable_client,
-            record_id=record_id,
-            base_id=base_id,
-            table_name=table_name
+            record_id=record_id
         )
+        login_result = automation.ig_login(username, password)
+
+        if login_result == "login_success":
+            logger.info("✅ Logged in successfully without 2FA")
+            result = "login_success"
+
+        elif login_result == "2fa_required":
+            logger.info("🔐 2FA required — proceeding with verification")
+            result = handle_2fa(
+                d=d,
+                username=username,
+                password=password,
+                email=email,
+                email_password=email_password,
+                package_name=package_name,
+                airtable_client=airtable_client,
+                record_id=record_id,
+                base_id=base_id,
+                table_name=table_id,
+                interactive=True
+            )
+
+        elif login_result == "login_failed":
+            logger.error("❌ Login failed due to incorrect credentials")
+            result = "login_failed"
+
+        else:
+            logger.error("❌ Login timeout or unknown post-login state")
+            result = "timeout_or_unknown"
 
         logger.info(f"🏁 Login flow result: {result}")
 
@@ -272,19 +327,19 @@ if __name__ == "__main__":
         logger.error(f"❌ Process failed with error: {e}")
 
     # ✅ Only reset identity if account was banned
-    if result == "account_banned":
-        logger.info("🚫 Account banned, triggering identity reset...")
-        if new_identity(d, timeout=10):
-            logger.info("✅ Identity reset triggered successfully")
-            confirm_xpath = '//android.widget.TextView[@resource-id="android:id/alertTitle"]'
-            if d.xpath(confirm_xpath).wait(timeout=10):
-                logger.info("🎉 New identity confirmed via alertTitle prompt")
-            else:
-                logger.warning("⚠️ Identity reset triggered, but confirmation prompt not detected")
-        else:
-            logger.warning("⚠️ Identity reset failed or notification not found")
-    else:
-        logger.info("✅ No identity reset needed (account not banned)")
+    # if result == "account_banned":
+    #     logger.info("🚫 Account banned, triggering identity reset...")
+    #     if new_identity(d, timeout=10):
+    #         logger.info("✅ Identity reset triggered successfully")
+    #         confirm_xpath = '//android.widget.TextView[@resource-id="android:id/alertTitle"]'
+    #         if d.xpath(confirm_xpath).wait(timeout=10):
+    #             logger.info("🎉 New identity confirmed via alertTitle prompt")
+    #         else:
+    #             logger.warning("⚠️ Identity reset triggered, but confirmation prompt not detected")
+    #     else:
+    #         logger.warning("⚠️ Identity reset failed or notification not found")
+    # else:
+    #     logger.info("✅ No identity reset needed (account not banned)")
 
 # TESTING
 

@@ -56,6 +56,7 @@ class StealthTyper:
 
 
     def type_text(self, text: str, clear_xpath: str = None):
+        text = text.strip()
         if clear_xpath:
             self.clear_field_before_typing(clear_xpath)
 
@@ -63,14 +64,17 @@ class StealthTyper:
         start_time = time.time()
         total_chars = len(text)
 
-        for chunk in text.split():
-            self._send_adb_input(chunk)
-            time.sleep(self.base_delay * len(chunk) + random.uniform(*TYPING_DELAY_RANGE))
-            self._send_adb_input(" ")
+        words = text.split()
+        for i, word in enumerate(words):
+            self._send_adb_input(word)
+            time.sleep(self.base_delay * len(word) + random.uniform(*TYPING_DELAY_RANGE))
+            if i < len(words) - 1:
+                self._send_adb_input(" ")
 
         elapsed = time.time() - start_time
         actual_wpm = (total_chars / 5) / (elapsed / 60)
         logger.info(f"Typed {total_chars} chars (~{actual_wpm:.1f} WPM) in {elapsed:.2f}s")
+
 
     def press_enter(self):
         self._adb_shell("input keyevent ENTER")
