@@ -1,13 +1,16 @@
+# main.py
+
 import uiautomator2 as u2
 import os
-import subprocess
 import time
+from Shared import core_ig_actions
 from Shared.ui_helper import UIHelper
-from .get_code import FirefoxAutomation
+from .get_code import  Firefox2FAFlow
 from .instagram_automation import InstagramAutomation
 from Shared.stealth_typing import StealthTyper
 from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
+from Shared.core_ig_actions import bring_app_to_foreground, launch_app_via_adb
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -18,86 +21,57 @@ load_dotenv(dotenv_path=env_path)
 
 logger = setup_logger(__name__)
 
-def handle_save_login_prompt(d, helper, username=None, timeout=8):
+def handle_2fa(
+    d,
+    username,
+    password,
+    package_name,
+    email,
+    email_password,
+    airtable_client,
+    record_id,
+    base_id,
+    table_name,
+    allow_manual_fallback=True
+):
     try:
-        keywords = ["save your login info", "save login", "zapisz dane logowania"]
-        logger.info("Checking for post-login save prompt...")
+        logger.info("🔐 2FA screen detected. Starting Firefox automation for code retrieval")
 
-        prompt_xpath = helper.find_prompt_xpath(keywords, timeout=timeout)
-        if not prompt_xpath:
-            logger.info("No save prompt appeared")
-            return
+        firefox = Firefox2FAFlow(
+            email=email,
+            password=email_password,
+            record_id=record_id,
+            base_id=base_id,
+            table_id=table_name  # ✅ Note: it's `table_name` here, not `table_id`
+        )
 
-        # Now search for the "Save" or "Not Now" buttons nearby
-        for button_text in ["Save", "Zapisz", "Not now", "Nie teraz"]:
-            btn_xpath = f'//android.widget.Button[contains(@text, "{button_text}")] | //android.widget.Button[contains(@content-desc, "{button_text}")]'
-            if helper.wait_for_xpath(btn_xpath, timeout=5):
-                if d.xpath(btn_xpath).click_exists(timeout=3):
-                    logger.info(f"✅ Clicked button: {button_text}")
-                    time.sleep(2)
-                    return
-                else:
-                    logger.warning(f"⚠️ Button found but click failed: {button_text}")
+        verification_code = firefox.run()
 
-        logger.warning("⚠️ Prompt appeared but no matching button was clicked")
-
-    except Exception as e:
-        logger.error(f"Error handling save login prompt: {e}")
-
-        # TODO Clean up function, move to using the watchers for popups and pull out logic for 2fa
-
-def handle_2fa(d, username, password, package_name, email, email_password, airtable_client, record_id, base_id, table_name, interactive=False):
-    try:
-        logger.info("2FA screen detected. Proceeding to retrieve 2FA code via Firefox")
-
-        firefox = FirefoxAutomation(email=email, password=email_password)
-        if not firefox.launch_firefox():
-            logger.error("❌ Failed to launch Firefox")
-            return "firefox_launch_failed"
-
-        if not firefox.navigate_to_url("op.pl"):
-            logger.error("❌ Failed to navigate to op.pl")
-            return "oppl_navigation_failed"
-
-        if not firefox.perform_login_sequence():
-            logger.error("❌ Firefox login sequence failed")
-            return "firefox_login_failed"
-
-        if interactive:
-            logger.info("🧑‍💻 Waiting for user to manually enter 2FA code...")
-            verification_code = input("📩 Enter the 2FA code you received via email: ").strip()
+        if not verification_code and allow_manual_fallback:
+            logger.warning("⚠️ Auto 2FA failed — prompting user manually")
+            verification_code = input("📩 Enter the 2FA code from email: ").strip()
             if not verification_code or not verification_code.isdigit():
-                logger.error("❌ Invalid 2FA code entered")
+                logger.error("❌ Invalid or empty 2FA code entered")
                 return "2fa_failed"
-        else:
-            firefox = FirefoxAutomation(email=email, password=email_password)
-            if not firefox.launch_firefox():
-                logger.error("❌ Failed to launch Firefox")
-                return "firefox_launch_failed"
+        elif not verification_code:
+            logger.error("❌ No 2FA code retrieved and fallback is disabled")
+            return "2fa_failed"
 
-            if not firefox.navigate_to_url("op.pl"):
-                logger.error("❌ Failed to navigate to op.pl")
-                return "oppl_navigation_failed"
+        # ✅ Switch to Instagram app and bring to foreground
+        logger.info("📱 Switching back to Instagram app...")
+        bring_app_to_foreground(
+            d,
+            package_name,
+            check_xpath='//android.view.View[@content-desc="Check your email"]',
+            timeout=10
+        )
 
-            if not firefox.perform_login_sequence():
-                logger.error("❌ Firefox login sequence failed")
-                return "firefox_login_failed"
-
-            verification_code = firefox.token_retriever.get_2fa_code()
-            if not verification_code:
-                logger.error("❌ Failed to retrieve 2FA code")
-                return "2fa_failed"
-
-
-
-        d.app_start(package_name)
-        logger.info("Switched back to Instagram app")
-        time.sleep(5)
 
         helper = UIHelper(d)
         typer = StealthTyper(device_id=d.serial)
 
-        if not helper.wait_for_xpath('//android.view.View[@content-desc="Check your email"]', timeout=15):
+        # 🔐 Wait for 2FA input screen
+        if not helper.wait_for_xpath('//android.view.View[@content-desc="Check your email"]', timeout=10):
             logger.error("❌ 2FA screen not ready — Check your email prompt missing")
             return "2fa_screen_not_ready"
 
@@ -107,8 +81,6 @@ def handle_2fa(d, username, password, package_name, email, email_password, airta
             return "2fa_input_not_found"
 
         input_field = d.xpath(input_xpath)
-
-        # Reliable EditText focus and click
         for attempt in range(3):
             logger.info(f"👆 Tapping EditText field (attempt {attempt+1})")
             if input_field.click_exists(timeout=2):
@@ -122,7 +94,7 @@ def handle_2fa(d, username, password, package_name, email, email_password, airta
         d.clear_text()
         time.sleep(0.5)
         typer.type_text(verification_code)
-        time.sleep(1.5)
+        time.sleep(2)
 
         entered = input_field.get_text() or ""
         logger.info(f"🔍 Text in input field: '{entered}'")
@@ -134,7 +106,7 @@ def handle_2fa(d, username, password, package_name, email, email_password, airta
             d.clear_text()
             time.sleep(0.5)
             typer.type_text(verification_code)
-            time.sleep(1.5)
+            time.sleep(2)
             entered = input_field.get_text() or ""
             logger.info(f"🔁 Retried input — field now contains: '{entered}'")
             if verification_code not in entered:
@@ -143,91 +115,123 @@ def handle_2fa(d, username, password, package_name, email, email_password, airta
 
         logger.info("✅ Successfully entered 2FA code")
 
-        # Continue button click
-        continue_xpath_variants = [
-            '//android.widget.Button[contains(@content-desc, "Continue")]',
-            '//android.widget.Button[contains(@text, "Continue")]',
-            '//android.view.View[contains(@content-desc, "Continue")]',
-            '^Continue',
-            '%continue%',
-        ]
-        for xpath in continue_xpath_variants:
-            if helper.wait_for_xpath(xpath, timeout=5):
-                if d.xpath(xpath).click_exists(timeout=3):
-                    logger.info(f"✅ Clicked Continue button using XPath: {xpath}")
-                    break
-        else:
-            logger.warning("⚠️ Continue button not found — checking if we already advanced")
-
-            # Check if we already passed the Continue screen (e.g. Save Login Info is up)
-            save_prompt_xpath = '//android.view.View[@content-desc="Save your login info?"]'
-            if helper.wait_for_xpath(save_prompt_xpath, timeout=5):
-                logger.info("✅ Detected Save Login screen — assuming Continue was already clicked")
-            else:
-                logger.error("❌ Continue button not found and Save screen not present")
-                return "confirm_button_not_found"
-
+        # ✅ Wait for Save Login screen (no continue logic)
         save_prompt_xpath = '//android.view.View[@content-desc="Save your login info?"]'
-        logger.info("Waiting for save login info prompt to appear...")
-        helper.wait_for_xpath(save_prompt_xpath, timeout=15)
-        handle_save_login_prompt(d, helper, username)
+        logger.info(f"Waiting for element: {save_prompt_xpath}")
+        if not helper.wait_for_xpath(save_prompt_xpath, timeout=10):
+            logger.error(f"❌ Timeout waiting for element: {save_prompt_xpath}")
+            return "save_prompt_not_found"
 
+        logger.info("✅ Save Login screen appeared — proceeding to post-login handler")
+        return Post2FAHandler(
+            d=d,
+            username=username,
+            airtable_client=airtable_client,
+            record_id=record_id,
+            base_id=base_id,
+            table_name=table_name
+        ).handle()
+
+    except Exception as e:
+        logger.error("💥 Exception during 2FA flow: %s", e)
+        return "exception"
+
+
+
+class Post2FAHandler:
+    def __init__(self, d, username, airtable_client, record_id, base_id, table_name):
+        self.d = d
+        self.username = username
+        self.airtable_client = airtable_client
+        self.record_id = record_id
+        self.base_id = base_id
+        self.table_name = table_name
+        self.helper = UIHelper(d)
+        self.logger = setup_logger()
+
+
+    def handle(self):
+        self._handle_save_login_prompt()
+        self._handle_setup_prompt()
+        return self._finalize_login_check()
+
+    def _handle_save_login_prompt(self):
+        try:
+            save_prompt_xpath = '//android.view.View[@content-desc="Save your login info?"]'
+            self.logger.info("Waiting for save login info prompt to appear...")
+            self.helper.wait_for_xpath(save_prompt_xpath, timeout=15)
+
+            self.logger.info("Checking for post-login save prompt...")
+
+            keywords = ["save your login info", "save login", "zapisz dane logowania"]
+            prompt_xpath = self.helper.find_prompt_xpath(keywords, timeout=8)
+
+            if not prompt_xpath:
+                self.logger.info("No save prompt appeared")
+                return
+
+            for button_text in ["Save", "Zapisz", "Not now", "Nie teraz"]:
+                btn_xpath = f'//android.widget.Button[contains(@text, "{button_text}")] | //android.widget.Button[contains(@content-desc, "{button_text}")]'
+                if self.helper.wait_for_xpath(btn_xpath, timeout=5):
+                    if self.d.xpath(btn_xpath).click_exists(timeout=3):
+                        self.logger.info(f"✅ Clicked button: {button_text}")
+                        time.sleep(2)
+                        return
+                    else:
+                        self.logger.warning(f"⚠️ Button found but click failed: {button_text}")
+            self.logger.warning("⚠️ Prompt appeared but no matching button was clicked")
+
+        except Exception as e:
+            self.logger.error(f"Error handling save login prompt: {e}")
+
+    def _handle_setup_prompt(self):
         setup_xpath = '%Set up on new device%'
         skip_xpath = '^Skip'
-        logger.info("Checking for optional 'Set up on new device' screen...")
-        if d.xpath(setup_xpath).wait(timeout=30):
-            logger.info("🆕 'Set up on new device' screen detected")
-            if d.xpath(skip_xpath).click_exists(timeout=5):
-                logger.info("✅ Clicked 'Skip' button")
+        self.logger.info("Checking for optional 'Set up on new device' screen...")
+
+        if self.d.xpath(setup_xpath).wait(timeout=30):
+            self.logger.info("🆕 'Set up on new device' screen detected")
+            if self.d.xpath(skip_xpath).click_exists(timeout=5):
+                self.logger.info("✅ Clicked 'Skip' button")
                 time.sleep(1.5)
             else:
-                logger.warning("⚠️ 'Skip' button appeared but click failed")
+                self.logger.warning("⚠️ 'Skip' button appeared but click failed")
         else:
-            logger.info("No 'Set up on new device' prompt appeared")
+            self.logger.info("No 'Set up on new device' prompt appeared")
 
-        logger.info("Waiting for post-2FA login confirmation...")
+    def _finalize_login_check(self):
+        self.logger.info("Waiting for post-2FA login confirmation...")
+
         story_xpath_variants = [
             f'//android.widget.TextView[@text="Your story"]',
-            f'//android.widget.Button[contains(@content-desc, "{username}\'s story")]',
-            f'//android.widget.ImageView[contains(@content-desc, "{username}\'s story")]',
+            f'//android.widget.Button[contains(@content-desc, "{self.username}\'s story")]',
+            f'//android.widget.ImageView[contains(@content-desc, "{self.username}\'s story")]',
         ]
         ban_xpath = '%We suspended your account%'
 
         start_time = time.time()
         timeout = 30
+
         while time.time() - start_time < timeout:
-            if d.xpath(ban_xpath).exists:
-                logger.error("🚫 Account suspended detected after 2FA")
+            if self.d.xpath(ban_xpath).exists:
+                self.logger.error("🚫 Account suspended detected after 2FA")
                 return "account_banned"
 
             for xpath in story_xpath_variants:
-                if d.xpath(xpath).exists:
-                    logger.info(f"✅ Story element matched: {xpath} — login + 2FA successful")
-                    airtable_client.base_id = base_id
-                    airtable_client.table_id = table_name
-                    airtable_client.update_record_fields(record_id, {"Logged In?": True})
+                if self.d.xpath(xpath).exists:
+                    self.logger.info(f"✅ Story element matched: {xpath} — login + 2FA successful")
+
+                    self.airtable_client.base_id = self.base_id
+                    self.airtable_client.table_id = self.table_name
+                    self.airtable_client.update_record_fields(self.record_id, {"Logged In?": True})
 
                     return True
 
             time.sleep(2)
 
-        logger.warning("❓ No story or ban element detected after timeout")
+        self.logger.warning("❓ No story or ban element detected after timeout")
         return "unknown"
 
-    except Exception as e:
-        logger.error("Error during login and 2FA process: %s", e)
-        return "exception"
-
-def launch_app_via_adb(device_id, package_name):
-    logger.info(f"🔧 Launching {package_name} via ADB (monkey shell)")
-    try:
-        subprocess.run([
-            "adb", "-s", device_id, "shell",
-            "monkey", "-p", package_name,
-            "-c", "android.intent.category.LAUNCHER", "1"
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"❌ ADB launch failed: {e}")
 
 
 if __name__ == "__main__":
@@ -279,7 +283,7 @@ if __name__ == "__main__":
         logger.info(f"✅ Starting automation for {username} on device {device_id}")
 
         logger.info(f"🚀 Attempting to launch Instagram clone: {package_name}")
-        launch_app_via_adb(device_id, package_name)
+        core_ig_actions.launch_app_via_adb(device_id, package_name)
         time.sleep(4)
 
         automation = InstagramAutomation(
@@ -307,7 +311,7 @@ if __name__ == "__main__":
                 record_id=record_id,
                 base_id=base_id,
                 table_name=table_id,
-                interactive=True
+                allow_manual_fallback=True
             )
 
         elif login_result == "login_failed":
@@ -325,81 +329,3 @@ if __name__ == "__main__":
 
     except Exception as e:
         logger.error(f"❌ Process failed with error: {e}")
-
-    # ✅ Only reset identity if account was banned
-    # if result == "account_banned":
-    #     logger.info("🚫 Account banned, triggering identity reset...")
-    #     if new_identity(d, timeout=10):
-    #         logger.info("✅ Identity reset triggered successfully")
-    #         confirm_xpath = '//android.widget.TextView[@resource-id="android:id/alertTitle"]'
-    #         if d.xpath(confirm_xpath).wait(timeout=10):
-    #             logger.info("🎉 New identity confirmed via alertTitle prompt")
-    #         else:
-    #             logger.warning("⚠️ Identity reset triggered, but confirmation prompt not detected")
-    #     else:
-    #         logger.warning("⚠️ Identity reset failed or notification not found")
-    # else:
-    #     logger.info("✅ No identity reset needed (account not banned)")
-
-# TESTING
-
-# def test_2fa_code_entry_only(d, code="434558"):
-#     from stealth_typing import StealthTyper
-#     from ui_helper import UIHelper
-#     import time
-#     import logging
-#
-#     logger = setup_logger("2FA_Code_Entry_Test")
-#     helper = UIHelper(d)
-#     typer = StealthTyper(device_id=d.serial)
-#
-#     check_email_xpath = '//android.view.View[@content-desc="Check your email"]'
-#     input_xpath = '//android.widget.EditText'
-#
-#     logger.info(f"📲 Starting 2FA code entry test with code: {code}")
-#
-#     # Wait for the 'Check your email' prompt
-#     if not helper.wait_for_xpath(check_email_xpath, timeout=15):
-#         logger.error("❌ 'Check your email' prompt not found")
-#         return False
-#
-#     # Wait for input field
-#     if not helper.wait_for_xpath(input_xpath, timeout=10):
-#         logger.error("❌ Input field not found")
-#         return False
-#
-#     input_field = d.xpath(input_xpath)
-#
-#     # Try clicking the field
-#     for attempt in range(3):
-#         logger.info(f"👆 Tapping EditText field (attempt {attempt+1})")
-#         if input_field.click_exists(timeout=2):
-#             time.sleep(0.5)
-#             break
-#         time.sleep(1)
-#     else:
-#         logger.error("❌ Failed to focus input field after retries")
-#         return False
-#
-#     d.clear_text()
-#     time.sleep(0.5)
-#
-#     typer.type_text(code)
-#     time.sleep(1.5)
-#
-#     entered_text = input_field.get_text() or ""
-#     logger.info(f"🔍 Text in input field: '{entered_text}'")
-#
-#     if code in entered_text:
-#         logger.info("✅ Code entered correctly")
-#         return True
-#     else:
-#         logger.error("❌ Code not correctly entered")
-#         return False
-# if __name__ == "__main__":
-#     import uiautomator2 as u2
-#     d = u2.connect()
-#
-#     success = test_2fa_code_entry_only(d, code="434558")
-#     print("✅ Test passed" if success else "❌ Test failed")
-#

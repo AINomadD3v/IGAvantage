@@ -36,7 +36,8 @@ class PopupHandler:
 
         # 🔁 Translation popup
         w("translation_popup") \
-            .when("^Try private translations") \
+            .when("//*[contains(@text, 'Try private translations')]") \
+            .when("//*[contains(@text, 'Not now')]") \
             .click()
 
         # 💾 Save login info prompt (Instagram)
@@ -219,76 +220,6 @@ class PopupHandler:
 
         except Exception as e:
             self.logger.error(f"💥 Error in handle_cookie_popup: {e}")
-            return False
-
-    def handle_cashback_popup(self) -> bool:
-        try:
-            self.logger.info("🟡 Running OCR-based cashback popup handler")
-
-            keywords = [
-                "cashback", "usługa zwrotu", "800 sklepach", "sprawdzam",
-                "gdzie możesz", "onet poczta", "allegro", "media markt",
-                "sinsay", "carrefour", "lot", "esky"
-            ]
-
-            screen_text = self.helper.perform_ocr().lower()
-            if not any(keyword in screen_text for keyword in keywords):
-                self.logger.info("✅ Cashback popup not detected via OCR")
-                return False
-
-            self.logger.info("⚠️ Cashback popup detected — attempting to dismiss...")
-
-            # OCR-based attempt to click '×' or 'x'
-            for symbol in ["×", "x"]:
-                center = self.helper.find_text_center(symbol, lang='eng')
-                if center:
-                    self.logger.info(f"✅ [OCR Click] Close symbol '{symbol}' found at {center}")
-                    self.d.click(*center)
-                    time.sleep(2)
-                    if not any(k in self.helper.perform_ocr().lower() for k in keywords):
-                        self.logger.info("✅ Popup dismissed via OCR-based click")
-                        return True
-
-            # Final absolute pixel fallback
-            self.logger.warning("🛑 Trying hardcoded absolute fallback near (1025, 715)")
-            fallback_coords = [
-                (1025, 715),
-                (1015, 715),
-                (1035, 715),
-                (1025, 705),
-                (1025, 725),
-            ]
-
-            for x, y in fallback_coords:
-                self.logger.info(f"🎯 [Absolute Click] Trying at ({x}, {y})")
-                self.d.click(x, y)
-                time.sleep(1.5)
-                if not any(k in self.helper.perform_ocr().lower() for k in keywords):
-                    self.logger.info(f"✅ Popup dismissed via hardcoded click at ({x}, {y})")
-                    return True
-
-            self.logger.error("❌ All dismissal attempts failed — cashback popup still visible")
-            return False
-
-        except Exception as e:
-            self.logger.error(f"💥 Error in handle_cashback_popup: {e}")
-            return False
-
-    def handle_translation_popup(self, timeout=6):
-        try:
-            self.logger.info("🔍 Waiting for translation popup...")
-            xpath = '^Try private translations'
-            for _ in range(timeout):
-                if self.d.xpath(xpath).exists:
-                    self.logger.info("📌 Translation popup detected — handling")
-                    self.handle_all_popups()
-                    time.sleep(1.5)
-                    return True
-                time.sleep(1)
-            self.logger.info("✅ Translation popup did not appear")
-            return False
-        except Exception as e:
-            self.logger.error(f"💥 Error in handle_translation_popup: {e}")
             return False
 
     def handle_all_popups(self, delay_after_click=1.0) -> int:

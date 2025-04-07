@@ -115,18 +115,16 @@ class InstagramAutomation:
             self.logger.info("Clicking and typing into username field")
             username_field.click()
             time.sleep(0.5)
-            self.d.clear_text()
-            time.sleep(0.5)
-            self.typer.type_text(username.strip(), clear_xpath='//android.widget.EditText[1]')
+            self.typer.type_text(username)
             time.sleep(1)
 
             # --- Step 4: Type password ---
             self.logger.info("Clicking and typing into password field")
             password_field.click()
             time.sleep(0.5)
-            self.d.clear_text()
+            self.typer.type_text(password)
+
             time.sleep(0.5)
-            self.typer.type_text(password.strip(), clear_xpath='//android.widget.EditText[2]')
             time.sleep(1)
 
             # --- Step 5: Show password (optional) ---
@@ -173,6 +171,8 @@ class InstagramAutomation:
             if self.d.xpath(save_prompt_xpath).wait(timeout=10):
                 self.logger.info("✅ 'Save your login info?' prompt detected")
                 if self.d.xpath(save_button_xpath).click_exists(timeout=3):
+                    self.airtable_client.update_record_fields(self.record_id, {"Logged In?": True})
+
                     self.logger.info("✅ Clicked 'Save' button")
                 else:
                     self.logger.warning("⚠️ 'Save' button click failed")
@@ -202,35 +202,3 @@ class InstagramAutomation:
         except Exception as e:
             self.logger.error(f"Error during XPath login: {e}")
             return False
-
-def handle_identity_reset_via_notification(d, timeout=10):
-    try:
-        logger.info("🔄 opening notification shade for identity reset...")
-        d.open_notification()
-        time.sleep(2)
-
-        # wait for the unique notification text to appear
-        identity_text_xpath = '//android.widget.textview[@resource-id="android:id/text" and @text="tap to quit the app and generate a new identity."]'
-        container_xpath = '(//android.widget.framelayout[@resource-id="com.android.systemui:id/expandablenotificationrow"])[6]'
-
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            if d.xpath(identity_text_xpath).exists:
-                logger.info("✅ found 'new identity' notification text")
-                container = d.xpath(container_xpath)
-                if container.exists and container.click_exists(timeout=3):
-                    logger.info("✅ clicked 'new identity' notification container")
-                    return true
-                else:
-                    logger.warning("⚠️ container found but click failed")
-            else:
-                logger.debug("waiting for 'new identity' notification to appear...")
-                time.sleep(1)
-
-        logger.error("❌ timeout: 'new identity' notification not found or not clickable")
-        return false
-
-    except exception as e:
-        logger.error(f"exception while handling identity reset: {e}")
-        return false
-

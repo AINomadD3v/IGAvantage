@@ -1,4 +1,4 @@
-# airtable_management.py
+# airtable_manager.py
 
 import os
 import requests

@@ -139,54 +139,33 @@ class UIHelper:
             self.logger.error(f"Click with fallback failed: {e}")
             return False
 
-    def click_show_password_icon(self, password_xpath):
+    def click_show_password_icon(self, password_xpath: str) -> bool:
         try:
-            password_input = self.d.xpath(password_xpath)
-            if not password_input.exists:
-                self.logger.error("Password field not found for show icon detection")
+            self.logger.info("🔍 Trying generic show-password button near password field")
+
+            # Go one level up from the password field, then grab *any* button
+            icon_xpath = f"{password_xpath}/../android.widget.Button"
+            self.logger.info(f"🔎 XPath: {icon_xpath}")
+
+            selector = self.d.xpath(icon_xpath)
+            if selector.exists:
+                x, y = selector.get().center()
+                self.logger.info(f"✅ Found button near password at ({x}, {y}) — clicking")
+                self.d.click(x, y)
+                time.sleep(0.5)
+                return True
+            else:
+                self.logger.warning("❌ No button found near password field")
                 return False
-
-            pw_bounds = password_input.info.get('bounds')
-            if not pw_bounds:
-                self.logger.error("Could not retrieve bounds of password field")
-                return False
-
-            pw_center_y = (pw_bounds['top'] + pw_bounds['bottom']) // 2
-            pw_right = pw_bounds['right']
-
-            closest_button = None
-            min_dist = float('inf')
-
-            for button in self.d.xpath('//android.widget.Button').all():
-                btn_bounds = button.info.get('bounds')
-                if not btn_bounds:
-                    continue
-
-                btn_center_y = (btn_bounds['top'] + btn_bounds['bottom']) // 2
-                btn_center_x = (btn_bounds['left'] + btn_bounds['right']) // 2
-
-                if abs(btn_center_y - pw_center_y) > 100:
-                    continue
-
-                dist = abs(btn_center_x - pw_right)
-
-                if dist < min_dist:
-                    closest_button = button
-                    min_dist = dist
-
-            if closest_button:
-                center = self.get_element_center(closest_button)
-                if center:
-                    self.logger.info(f"Clicking closest show password button at: {center}")
-                    self.d.click(*center)
-                    return True
-
-            self.logger.warning("No matching show-password icon found near password field")
-            return False
 
         except Exception as e:
-            self.logger.error(f"Error clicking show password icon: {e}")
+            self.logger.error(f"💥 Error clicking generic password reveal button: {e}")
             return False
+
+
+
+
+
 
     def tap_random_within_element(self, xpath: str, label: str = "element", timeout: int = 5) -> bool:
         try:

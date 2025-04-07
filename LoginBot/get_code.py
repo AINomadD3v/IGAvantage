@@ -1,10 +1,11 @@
 # get_code.py
 
 from Shared.airtable_manager import AirtableClient
+import os
 import re
+from pathlib import Path
 import uiautomator2 as u2
 import time
-import logging
 from Shared.logger_config import setup_logger
 from Shared.stealth_typing import StealthTyper
 from Shared.popup_handler import PopupHandler
@@ -12,165 +13,138 @@ from Shared.ui_helper import UIHelper
 
 logger = setup_logger(__name__)
 
-class FirefoxAutomation:
-    def __init__(self, email, password):
+POPUP_CONFIG_PATH = Path(__file__).resolve().parents[1] / "Shared" / "popup_config.json"
+
+
+class FirefoxSession:
+    def __init__(self, email: str, password: str, firefox_package: str = "org.mozilla.firefoy"):
         self.email = email
         self.password = password
-        self.d = u2.connect()  # Connect to device
-        self.helper = UIHelper(self.d)  # ✅ Initialize helper before using it
-
-        self.popup_handler = PopupHandler(self.d, helper=self.helper, config_path="popup_config.json")  # ✅ Now safe to use helper
+        self.firefox_package = firefox_package
+        self.d = u2.connect()
+        self.logger = setup_logger(self.__class__.__name__)
+        self.helper = UIHelper(self.d)
+        self.popup_handler = PopupHandler(self.d, helper=self.helper, config_path=str(POPUP_CONFIG_PATH))
         self.popup_handler.register_watchers()
 
-        self.firefox_package = "org.mozilla.firefoy"
-        self.logger = setup_logger(self.__class__.__name__)
-        self.token_retriever = TwoFactorTokenRetriever(
-            driver=self.d,
-            helper=self.helper,
-            logger=self.logger,
-            firefox_package=self.firefox_package,
-            popup_handler=self.popup_handler
-        )
-        self.is_logged_in = False
+    def start(self, url: str = "op.pl") -> bool:
+        return all([
+            self._launch_firefox(),
+            self._navigate_to_url(url),
+            self._perform_login_sequence()
+        ])
 
-    def launch_firefox(self):
+    def _launch_firefox(self) -> bool:
         try:
             self.logger.info("Launching Firefox...")
             self.d.app_start(self.firefox_package)
-            time.sleep(1)
-
-            self.logger.info("⏳ Waiting for first-time popups...")
-            time.sleep(3)  # Give time for popup watchers to auto-dismiss
-
-            # Manually handle any missed popups once
+            time.sleep(3)
             self.popup_handler.handle_all_popups()
 
-            # Now try to find the URL bar
             smart_xpath = '^Search or enter address'
-            url_bar_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            fallback_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
 
             for _ in range(10):
-                self.popup_handler.handle_all_popups()
-
                 if self.d.xpath(smart_xpath).exists:
-                    self.logger.info("✅ Smart match: found 'Search or enter address'")
+                    self.logger.info("✅ Found smart URL bar")
                     self.d.xpath(smart_xpath).click()
-                    return True, True
-
-                if self.d.xpath(url_bar_xpath).exists:
-                    self.logger.info("✅ Fallback: found URL bar via resource-id")
-                    self.d.xpath(url_bar_xpath).click()
-                    return True, False
-
+                    return True
+                if self.d.xpath(fallback_xpath).exists:
+                    self.logger.info("✅ Found fallback URL bar")
+                    self.d.xpath(fallback_xpath).click()
+                    return True
                 time.sleep(1)
 
-            self.logger.error("❌ URL bar not found after popups cleared")
-            return False, False
-
+            self.logger.error("❌ Could not find Firefox URL bar")
+            return False
         except Exception as e:
             self.logger.error(f"Error launching Firefox: {e}")
-            return False, False
+            return False
 
-    def navigate_to_url(self, url, skip_click=False):
+    def _navigate_to_url(self, url: str) -> bool:
         try:
-            if not url.startswith(('http://', 'https://')):
-                url = f'https://www.{url}'
-
-            self.logger.info("Navigating to %s", url)
+            full_url = f"https://www.{url}" if not url.startswith("http") else url
+            self.logger.info(f"Navigating to {full_url}")
             typer = StealthTyper(device_id=self.d.serial)
+            xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
 
-            url_bar_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            if not self.helper.wait_for_xpath(xpath, timeout=5):
+                return False
+            if not self.d.xpath(xpath).click_exists(timeout=3):
+                return False
 
-            if skip_click:
-                self.logger.info("🔁 Smart match already clicked — skipping manual URL bar click")
-                time.sleep(0.5)
-            else:
-                self.logger.info("👆 Manually clicking URL bar (no smart match used)")
-                if not self.helper.wait_for_xpath(url_bar_xpath, timeout=5):
-                    self.logger.error("❌ URL bar not found")
-                    return False
+            input_box = self.d.xpath(xpath)
 
-                if not self.d.xpath(url_bar_xpath).click_exists(timeout=3):
-                    self.logger.error("❌ Failed to click URL bar")
-                    return False
-
-            # Always re-fetch the url_bar element after interaction
-            url_bar = self.d.xpath(url_bar_xpath)
-
-            # Enter and confirm the URL
-            for attempt in range(2):
+            for _ in range(2):
                 self.d.clear_text()
                 time.sleep(0.3)
-                typer.type_text(url)
-                time.sleep(0.8)
-
-                typed_text = url_bar.get_text() or ""
-                self.logger.info("Typed URL: '%s'", typed_text)
-
-                if url in typed_text:
+                typer.type_text(full_url)
+                time.sleep(1)
+                if full_url in (input_box.get_text() or ""):
                     break
-                self.logger.warning("URL entry mismatch. Retrying...")
-
-            if url not in (url_bar.get_text() or ""):
-                self.logger.error("❌ Failed to correctly enter URL after retries")
+            else:
                 return False
 
             typer.press_enter()
-
-            # Wait for WebView and progress bar to disappear
-            self.logger.info("⏳ Waiting for page to load...")
-            start_time = time.time()
-            while time.time() - start_time < 20:
-                if self.d(className="android.webkit.WebView").exists:
-                    progress = self.d(resourceIdMatches=".*progress.*")
-                    if not progress.exists:
-                        self.logger.info("✅ Page loaded — WebView visible, no progress bar")
-                        time.sleep(5)  # buffer for cookie popup
-
-                        try:
-                            self.logger.info("🔍 Checking for cookie popup...")
-                            self.popup_handler.handle_cookie_popup()
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Cookie popup handling failed: {e}")
-
-                        return True
-                time.sleep(1)
-
-            self.logger.warning("⚠️ Page did not fully load within timeout")
-            return False
-
+            time.sleep(5)
+            return True
         except Exception as e:
-            self.logger.error(f"💥 Error in navigate_to_url: {e}")
+            self.logger.error(f"Error navigating to URL: {e}")
             return False
 
- 
+class EmailLogin:
+    def __init__(self, email, password, firefox_package="org.mozilla.firefoy"):
+        self.email = email
+        self.password = password
+        self.d = u2.connect()
+        self.helper = UIHelper(self.d)
+        self.popup_handler = PopupHandler(self.d, helper=self.helper, config_path=str(POPUP_CONFIG_PATH))
+        self.popup_handler.register_watchers()
+        self.firefox_package = firefox_package
+        self.logger = setup_logger(self.__class__.__name__)
+        self.email_entered = False
 
     def handle_email_input(self):
-        d = self.d
-        helper = self.helper
-        email = self.email
-        logger = logging.getLogger("handle_email_input")
-        typer = StealthTyper(device_id=d.serial)
+        logger = self.logger
         email_xpath = '//android.widget.EditText[@resource-id="email"]'
         password_xpath = '//android.widget.EditText[@resource-id="password"]'
+        typer = StealthTyper(device_id=self.d.serial)
+
+        if self.email_entered:
+            logger.info("📧 Email already entered, skipping")
+            return True
 
         for attempt in range(3):
             logger.info(f"📧 Email entry attempt {attempt + 1}/3")
-            if not helper.wait_for_xpath(email_xpath, timeout=10):
+
+            # Step 1: Wait for email field to appear
+            if not self.helper.wait_for_xpath(email_xpath, timeout=10):
                 logger.error("Email input field not found")
                 return False
 
-            field = d.xpath(email_xpath)
+            logger.info("🕒 Email field found — waiting before popup check...")
+            time.sleep(5)
+
+            # Step 2: Run cookie popup handler BEFORE interacting with email field
+            self.logger.info("📋 Running cookie popup handler before email entry")
+            self.popup_handler.handle_cookie_popup()
+
+            # Step 3: Wait again to let any popup interaction settle
+            time.sleep(1)
+
+            # Step 4: Locate and click email field
+            field = self.d.xpath(email_xpath)
             if not field.click_exists(timeout=2):
-                logger.error("Failed to click email field")
+                logger.error("❌ Failed to click email field")
                 return False
 
-            d.clear_text()
-            typer.type_text(email)
+            self.d.clear_text()
+            typer.type_text(self.email)
 
+            # Step 5: Verify email was typed correctly
             for _ in range(3):
                 entered = field.get_text() or ""
-                if email in entered:
+                if self.email in entered:
                     logger.info(f"✅ Email entered: {entered}")
                     break
                 time.sleep(0.5)
@@ -178,134 +152,84 @@ class FirefoxAutomation:
                 logger.warning(f"❌ Email mismatch: {entered}")
                 continue
 
-            # Confirm one last time
-            if email not in (field.get_text() or ""):
-                logger.error("❌ Final email entry failed")
-                return False
-
-            if not helper.smart_button_clicker("NEXT", fallback_xpath='//android.widget.Button[@text="NEXT"]'):
+            # Step 6: Click "NEXT" button
+            if not self.helper.smart_button_clicker("NEXT", fallback_xpath='//android.widget.Button[@text="NEXT"]'):
                 logger.error("❌ Failed to click NEXT")
                 return False
 
-            if not helper.wait_for_xpath(password_xpath, timeout=8):
+            # Step 7: Wait for password field to appear
+            if not self.helper.wait_for_xpath(password_xpath, timeout=8):
                 logger.warning("NEXT clicked, but password field didn't appear")
                 return False
 
             logger.info("✅ Email flow complete")
+            self.email_entered = True
             return True
 
         logger.error("❌ Email input failed after retries")
         return False
 
+
+
+
     def handle_password_input(self):
-        d = self.d
-        helper = self.helper
-        password = self.password
-        logger = logging.getLogger("handle_password_input")
-        typer = StealthTyper(device_id=d.serial)
+        logger = self.logger
         password_xpath = '//android.widget.EditText[@resource-id="password"]'
-        trusted_prompt_xpath = '//android.view.View[@text="Do you want to add this device to trusted ones?"]'
+        typer = StealthTyper(device_id=self.d.serial)
 
         for attempt in range(3):
             logger.info(f"🔑 Password entry attempt {attempt + 1}/3")
 
-            if not helper.wait_for_xpath(password_xpath, timeout=10):
+            if not self.helper.wait_for_xpath(password_xpath, timeout=10):
                 logger.error("Password input field not found")
                 return False
 
-            field = d.xpath(password_xpath)
+            field = self.d.xpath(password_xpath)
             if not field.click_exists(timeout=2):
                 logger.error("Failed to click password field")
                 return False
 
-            d.clear_text()
+            self.d.clear_text()
+            typer.type_text(self.password)
+            time.sleep(0.5)
 
-            for fill_attempt in range(2):
-                typer.type_text(password)
-                time.sleep(0.5)
-                if not helper.click_show_password_icon(password_xpath):
-                    logger.warning("Show password icon not found")
-                visible_pw = field.get_text() or ""
-                if visible_pw == password:
-                    logger.info("✅ Password match confirmed")
-                    break
-                else:
-                    logger.warning("❌ Password mismatch — retrying")
-                    d.clear_text()
-            else:
-                continue
-
-            if not helper.smart_button_clicker("LOG IN", fallback_xpath='//android.widget.Button[@text="LOG IN"]'):
-                logger.error("❌ Failed to click LOG IN")
+            # 🔁 IMMEDIATE show-password button click, BEFORE checking text
+            if not self.helper.click_show_password_icon(password_xpath):
+                logger.error("❌ Could not click show-password icon — can't verify password")
                 return False
 
-            logger.info("✅ Password submitted — waiting for next page")
-            time.sleep(2)
+            visible_pw = field.get_text() or ""
+            logger.info(f"👁️ Visible field text: '{visible_pw}'")
 
-            logger.info("Password Submitted - continuing to post-login flow")
-            return "submitted"
-
-            # # Short wait for trusted device prompt
-            # if helper.wait_for_xpath(trusted_prompt_xpath, timeout=2):
-            #     logger.info("➡️ Trusted device prompt detected")
-            #     return "trusted_device_prompt"
-            #
-            # return "submitted"
+            if visible_pw == self.password:
+                logger.info("✅ Password match confirmed")
+                if not self.helper.smart_button_clicker("LOG IN", fallback_xpath='//android.widget.Button[@text="LOG IN"]'):
+                    logger.error("❌ Failed to click LOG IN")
+                    return False
+                logger.info("✅ Password submitted")
+                time.sleep(2)
+                return "submitted"
+            else:
+                logger.warning("❌ Password mismatch — retrying")
+                self.d.clear_text()
+                time.sleep(1)
 
         logger.error("❌ Password entry failed after retries")
         return False
 
-    def handle_trusted_device_prompt(self):
-        helper = self.helper
-
-        logger = logging.getLogger("handle_trusted_device_prompt")
-        prompt_xpath = '//android.view.View[@text="Do you want to add this device to trusted ones?"]'
-
-        if not helper.wait_for_xpath(prompt_xpath, timeout=10):
-            logger.info("Trusted device prompt not present")
-            return False
-
-        logger.info("Trusted device prompt detected")
-
-        if not helper.smart_button_clicker("Skip", fallback_xpath='//android.widget.Button[@text="Skip"]'):
-            logger.warning("❌ Failed to click Skip on trusted device prompt")
-            return False
-
-        time.sleep(1.5)
-        logger.info("✅ Trusted device prompt skipped")
-        return True
-
     def handle_post_login_flow(self):
+        logger = self.logger
         d = self.d
-        helper = self.helper
-        popup_handler = self.popup_handler
-        logger = logging.getLogger("handle_post_login_flow")
 
         logger.info("▶️ Starting post-login handling")
 
-        # Step 1: Dismiss save password popup (if shown)
-        for _ in range(5):
-            container = d(resourceId="org.mozilla.firefoy:id/design_bottom_sheet")
-            cancel_btn = d(resourceId="org.mozilla.firefoy:id/save_cancel")
-            if container.exists and cancel_btn.exists and cancel_btn.click_exists(timeout=3):
-                logger.info("✅ Dismissed save password popup")
-                time.sleep(1)
-                break
-            time.sleep(1.5)
+        # ✅ Watchers now handle all popups — no need for manual save password logic
 
-        # Step 2: Handle translation popup if it appears late
-        popup_handler.handle_translation_popup()
-
-        # Step 3: Handle any lingering popups
-        popup_handler.handle_all_popups()
-
-        # Step 4: Wait for final inbox UI (React_MainContainer)
-        logger.info("⏳ Verifying inbox UI up to 30s post-popup")
-        email_nav = EmailNavigation(driver=d, helper=helper, popup_handler=popup_handler)
+        logger.info("⏳ Verifying inbox UI up to 30s post-login")
+        email_nav = EmailNavigation(driver=d, helper=self.helper, popup_handler=self.popup_handler)
 
         start = time.time()
         while time.time() - start < 30:
-            popup_handler.handle_all_popups()
             if email_nav.verify_logged_in():
                 logger.info("✅ Final login verification passed")
                 return True
@@ -315,40 +239,57 @@ class FirefoxAutomation:
         return False
 
 
+    def perform_full_login(self):
+        self.logger.info("🔐 Starting full email login flow...")
 
-    def perform_login_sequence(self):
+        # ✅ Step 0: Start Firefox and navigate to op.pl
+        self.logger.info("🌐 Launching Firefox and navigating to op.pl")
+
         try:
-            self.logger.info("🔐 Starting login sequence...")
+            self.d.app_start(self.firefox_package)
+            time.sleep(3)
+            self.popup_handler.handle_all_popups()
 
+            smart_xpath = '^Search or enter address'
+            fallback_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
 
-            # Step 1: Email input
-            if not self.handle_email_input():
-                self.logger.error("❌ Email input failed")
+            for _ in range(10):
+                if self.d.xpath(smart_xpath).exists:
+                    self.logger.info("✅ Found smart URL bar")
+                    self.d.xpath(smart_xpath).click()
+                    break
+                elif self.d.xpath(fallback_xpath).exists:
+                    self.logger.info("✅ Found fallback URL bar")
+                    self.d.xpath(fallback_xpath).click()
+                    break
+                time.sleep(1)
+            else:
+                self.logger.error("❌ Could not find Firefox URL bar")
                 return False
 
-            # Step 2: Password input
-            password_result = self.handle_password_input()
-            if password_result is False:
-                self.logger.error("❌ Password input failed")
+            typer = StealthTyper(device_id=self.d.serial)
+            url_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+
+            if not self.d.xpath(url_xpath).click_exists(timeout=3):
+                self.logger.error("❌ Could not click on URL input box")
                 return False
 
-            # Step 3: Trusted device prompt if immediately triggered
-            if password_result == "trusted_device_prompt":
-                self.logger.info("➡️ Trusted device prompt appeared immediately")
-                self.handle_trusted_device_prompt()
-
-            # Step 4: Final post-login handling and inbox verification
-            if not self.handle_post_login_flow():
-                self.logger.error("❌ Post-login flow failed to verify login")
-                return False
-
-            self.logger.info("✅ Login sequence completed successfully")
-            self.is_logged_in = True
-            return True
+            self.d.clear_text()
+            time.sleep(0.3)
+            typer.type_text("https://www.op.pl")
+            typer.press_enter()
+            time.sleep(5)
 
         except Exception as e:
-            self.logger.error(f"💥 Fatal error in login sequence: {e}")
+            self.logger.error(f"❌ Failed to launch and navigate Firefox: {e}")
             return False
+
+        # ✅ Proceed with login
+        if not self.handle_email_input():
+            return False
+        self.handle_password_input()
+        return self.handle_post_login_flow()
+
 
 class EmailNavigation:
     def __init__(self, driver, helper, popup_handler):
@@ -518,53 +459,16 @@ class EmailNavigation:
 
     def perform_email_navigation(self):
         try:
-            # Step 1: Verify login state
-            logged_in = self.verify_logged_in()
+            self.logger.info("🔁 Trying Communities tab first for 2FA code...")
 
-            if logged_in:
-                self.logger.info("✅ React_MainContainer present — waiting for possible popups...")
-
-                # Step 2: Handle translation popup if it appears within 5 seconds
-                translation_xpath = '^Try private translations'
-                for _ in range(5):
-                    if self.d.xpath(translation_xpath).exists:
-                        self.logger.info("📌 Translation popup appeared — dismissing")
-                        self.popup_handler.handle_all_popups()
-                        time.sleep(1.5)
-                        break
-                    time.sleep(1)
-
-                # Step 3: Attempt to extract 2FA code from main container
-                code = self.find_code_in_main_container()
-                if code:
-                    self.logger.info(f"✅ 2FA code found in main container: {code}")
-                    return code
-                else:
-                    self.logger.info("⚠️ No 2FA code found in main container — falling back to sidebar")
-
-            else:
-                self.logger.info("⚠️ React_MainContainer not found — proceeding with sidebar fallback...")
-
-            # Step 4: Open sidebar
+            # Step 1: Open sidebar
             if not self.open_sidebar():
-                self.logger.info("🕵️ Sidebar open failed — checking for cashback popup...")
-                try:
-                    dismissed = self.popup_handler.handle_cashback_popup()
-                    if dismissed:
-                        self.logger.info("✅ Cashback popup dismissed — retrying sidebar")
-                        if not self.open_sidebar():
-                            self.logger.error("❌ Sidebar open still failed after cashback dismiss")
-                            return None
-                    else:
-                        self.logger.info("ℹ️ No cashback popup to dismiss")
-                        return None
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Cashback popup handler failed: {e}")
-                    return None
+                self.logger.error("❌ Failed to open sidebar")
+                return None
 
-            time.sleep(1.5)  # Let animation settle
+            time.sleep(1.5)
 
-            # Step 5: Confirm sidebar opened (retry up to 2 times)
+            # Step 2: Confirm sidebar opened
             for attempt in range(2):
                 if self.verify_sidebar_open():
                     break
@@ -575,14 +479,15 @@ class EmailNavigation:
                 self.logger.error("❌ Sidebar failed to open after retries")
                 return None
 
-            # Step 6: Navigate to Communities tab
+            # Step 3: Navigate to Communities tab
             if not self.navigate_to_communities():
+                self.logger.error("❌ Failed to navigate to Communities tab")
                 return None
 
             self.logger.info("✅ Clicked Communities tab — waiting for view to load...")
             time.sleep(2)
 
-            # Step 7: Search for 2FA email in community tab
+            # Step 4: Search for 2FA email in community tab
             smart_xpath = '^Hi '
             matches = self.d.xpath(smart_xpath).all()
             self.logger.info(f"📥 Found {len(matches)} candidate email blocks")
@@ -594,18 +499,45 @@ class EmailNavigation:
                     match = re.search(r"\b(\d{6})\b", full_text)
                     if match:
                         code = match.group(1)
-                        self.logger.info(f"✅ Extracted 2FA code: {code}")
+                        self.logger.info(f"✅ Extracted 2FA code from Communities tab: {code}")
                         return code
                     else:
                         self.logger.warning("No 6-digit code found in matched email")
                         return None
 
-            self.logger.error("❌ No matching Instagram 2FA email found after sidebar navigation")
-            return None
+            self.logger.warning("❌ No 2FA code found in Communities tab — falling back to main container")
+
+            # Step 5: Fallback — check if user is logged in
+            if not self.verify_logged_in():
+                self.logger.error("❌ Login state not valid, skipping main container check")
+                return None
+
+            self.logger.info("✅ Logged in — trying to extract code from main container")
+
+            # Optional: dismiss translation popup
+            translation_xpath = '^Try private translations'
+            for _ in range(5):
+                if self.d.xpath(translation_xpath).exists:
+                    self.logger.info("📌 Translation popup appeared — dismissing")
+                    self.popup_handler.handle_all_popups()
+                    time.sleep(1.5)
+                    break
+                time.sleep(1)
+
+            # Step 6: Try main container extraction
+            code = self.find_code_in_main_container()
+            if code:
+                self.logger.info(f"✅ 2FA code retrieved from main container: {code}")
+                return code
+            else:
+                self.logger.error("❌ No 2FA code found in main container fallback")
+                return None
 
         except Exception as e:
-            self.logger.error(f"Error in email navigation sequence: {e}")
+            self.logger.error(f"💥 Error in email navigation sequence: {e}")
             return None
+
+
 
     def logout_of_email(self):
         try:
@@ -794,7 +726,6 @@ class TwoFactorTokenRetriever:
         try:
             self.logger.info("Starting 2FA code retrieval process")
 
-            # Try early code extraction from main container
             email_nav = EmailNavigation(driver=self.d, helper=self.helper, popup_handler=self.popup_handler)
             early_code = email_nav.perform_email_navigation()
             if early_code:
@@ -809,96 +740,122 @@ class TwoFactorTokenRetriever:
             self.logger.error("Error in get_2fa_code: %s", e)
             return None
 
+class Firefox2FAFlow:
+    def __init__(self, email, password, record_id, base_id, table_id, firefox_package="org.mozilla.firefoy"):
+        self.email = email
+        self.password = password
+        self.record_id = record_id
+        self.base_id = base_id
+        self.table_id = table_id
+        self.firefox_package = firefox_package
+        self.logger = setup_logger(self.__class__.__name__)
+        self.d = u2.connect()
+        self.airtable = AirtableClient()
+        self.airtable.base_id = self.base_id
+        self.airtable.table_id = self.table_id
 
-# if __name__ == "__main__":
-#     try:
-#         logger.info("🔍 Fetching email credentials from Airtable...")
-#
-#         base_id = os.getenv("AIRTABLE_BASE_ID")
-#         table_name = os.getenv("IG_ARMY_ACCOUNTS_TABLE_ID")
-#         unused_view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
-#
-#         client = AirtableClient()
-#         account_data = client.get_single_active_account(
-#             base_id=base_id,
-#             table_name=table_name,
-#             unused_view_id=unused_view_id
-#         )
-#
-#         if not account_data:
-#             raise Exception("❌ No active account found in Airtable")
-#
-#         account = account_data["fields"]
-#         email = account.get("Email")
-#         password = account.get("Email Password")
-#
-#         if not email or not password:
-#             raise Exception("❌ Missing email or password in Airtable record")
-#
-#         logger.info(f"✅ Using email: {email}")
-#
-#         firefox = FirefoxAutomation(email=email, password=password)
-#
-#         if not firefox.launch_firefox():
-#             raise Exception("❌ Failed to launch Firefox")
-#
-#         if not firefox.navigate_to_url("op.pl"):
-#             raise Exception("❌ Failed to navigate to op.pl")
-#
-#         if not firefox.perform_login_sequence():
-#             raise Exception("❌ Login sequence failed")
-#
-#         email_nav = EmailNavigation(driver=firefox.d, helper=firefox.helper, popup_handler=popup_handler)
-#         code = email_nav.perform_email_navigation()
-#
-#         if not code:
-#             logger.info("🔁 Trying fallback extraction from opened email")
-#             code = firefox.token_retriever.get_2fa_code(max_retries=3)
-#
-#         if not code:
-#             raise Exception("❌ Failed to retrieve 2FA code")
-#         else:
-#             logger.info(f"✅ Successfully retrieved 2FA code: {code}")
-#
-#         # Always try indentiy reset, regardless of sources
-#         try:
-#             logger.info("🔄 Triggering identity reset...")
-#             if new_identity(firefox.d, timeout=10):
-#                 logger.info("✅ Identity reset triggered successfully")
-#             else:
-#                 logger.warning("⚠️ Identity reset failed or notification not found")
-#         except Exception as e:
-#             logger.error(f"💥 Error during identity reset: {e}")
-#
-#     except Exception as e:
-#         logger.error(f"❌ Process failed: {e}")
-#
-#     finally:
-#         pass
-def main():
-    try:
-        logger.info("🧪 Running email logout + new tab test")
+    def run(self) -> str | None:
+        try:
+            self.logger.info("🚀 Starting Firefox 2FA extraction flow")
 
-        d = u2.connect()
-        helper = UIHelper(d)
+            login = EmailLogin(
+                email=self.email,
+                password=self.password,
+                firefox_package=self.firefox_package
+            )
 
-        # Ensure Firefox is open and user is logged into email before running this
-        popup_handler = PopupHandler(d, helper=helper, config_path="popup_config.json")
-        popup_handler.register_watchers()
+            # ✅ Mark 'Automation Used?' = True after reaching 2FA retrieval phase
+            self.logger.info("📝 Marking 'Automation Used?' = True in Airtable")
+            self.airtable.update_record_fields(self.record_id, {"Automation Used?": True})
 
-        email_nav = EmailNavigation(driver=d, helper=helper, popup_handler=popup_handler)
+            if not login.perform_full_login():
+                self.logger.error("❌ Login failed")
+                return None
 
-        if email_nav.logout_of_email():
-            logger.info("✅ Successfully logged out of email")
 
-        if email_nav.open_new_tab():
-            logger.info("✅ Successfully opened new tab in Firefox")
+            helper = UIHelper(self.d)
+            popup_handler = PopupHandler(self.d, helper=helper, config_path=str(POPUP_CONFIG_PATH))
+            token_retriever = TwoFactorTokenRetriever(
+                driver=self.d,
+                helper=helper,
+                logger=self.logger,
+                firefox_package=self.firefox_package,
+                popup_handler=popup_handler
+            )
 
-        logger.info("🎉 Test completed")
+            code = token_retriever.get_2fa_code()
+            if code:
+                self.logger.info(f"✅ 2FA code retrieved: {code}")
 
-    except Exception as e:
-        logger.error(f"💥 Test failed: {e}")
+                # ✅ After successful 2FA, mark 'Logged In?' = True
+                self.logger.info("📝 Marking 'Logged In?' = True in Airtable")
+                self.airtable.update_record_fields(self.record_id, {"Logged In?": True})
+
+                return code
+            else:
+                self.logger.error("❌ Failed to retrieve 2FA code")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"💥 Exception during Firefox2FAFlow: {e}")
+            return None
 
 if __name__ == "__main__":
-    main()
+    try:
+        logger.info("🔍 Fetching email credentials from Airtable...")
+
+        # Pull env vars for Airtable config
+        base_id = os.getenv("AIRTABLE_BASE_ID")
+        table_id = os.getenv("IG_ARMY_ACCOUNTS_TABLE_ID")
+        view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
+
+        # Fetch account record
+        client = AirtableClient()
+        account_data = client.get_single_active_account(
+            base_id=base_id,
+            table_id=table_id,
+            view_id=view_id
+        )
+
+        if not account_data:
+            raise Exception("❌ No active account found in Airtable")
+
+        fields = account_data["fields"]
+        email = fields.get("Email")
+        password = fields.get("Email Password")
+
+        if not email or not password:
+            raise Exception("❌ Missing email or password in Airtable record")
+
+        logger.info(f"✅ Using email: {email}")
+
+        # Run Firefox 2FA flow
+        flow = Firefox2FAFlow(
+            email=email,
+            password=password,
+            record_id=account_data["id"],
+            base_id=account_data["base_id"],
+            table_id=account_data["table_id"]
+        )
+
+        code = flow.run()
+
+        if not code:
+            raise Exception("❌ Failed to retrieve 2FA code")
+        else:
+            logger.info(f"✅ Successfully retrieved 2FA code: {code}")
+
+            # 🆕 Trigger new identity after 2FA is logged
+            from Shared.new_identity import new_identity  # Adjust import path as needed
+            logger.info("🔁 Triggering new identity reset")
+            if new_identity(flow.d):
+                logger.info("🆕 New identity successfully triggered")
+            else:
+                logger.warning("⚠️ Failed to trigger new identity")
+
+    except Exception as e:
+        logger.error(f"❌ Process failed: {e}")
+
+    finally:
+        pass
 
