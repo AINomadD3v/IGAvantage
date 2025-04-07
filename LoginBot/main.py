@@ -11,6 +11,7 @@ from Shared.stealth_typing import StealthTyper
 from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
 from Shared.core_ig_actions import bring_app_to_foreground, launch_app_via_adb
+from Shared.new_identity import new_identity
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -18,6 +19,7 @@ from pathlib import Path
 # Ensure project root .env is loaded
 env_path = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(dotenv_path=env_path)
+
 
 logger = setup_logger(__name__)
 
@@ -42,7 +44,7 @@ def handle_2fa(
             password=email_password,
             record_id=record_id,
             base_id=base_id,
-            table_id=table_name  # ✅ Note: it's `table_name` here, not `table_id`
+            table_id=table_name
         )
 
         verification_code = firefox.run()
@@ -57,22 +59,43 @@ def handle_2fa(
             logger.error("❌ No 2FA code retrieved and fallback is disabled")
             return "2fa_failed"
 
-        # ✅ Switch to Instagram app and bring to foreground
-        logger.info("📱 Switching back to Instagram app...")
-        bring_app_to_foreground(
+        logger.info(f"✅ 2FA code retrieved: {verification_code}")
+
+        # Step 1: Wait briefly
+        logger.info("🕒 Waiting before triggering new identity reset...")
+        time.sleep(2)
+
+        # Step 2: Trigger identity reset via notification
+        logger.info("🔁 Attempting identity reset from Firefox notification...")
+        identity_success = new_identity(d)
+
+        if identity_success:
+            logger.info("✅ Identity reset succeeded via notification")
+        else:
+            logger.warning("⚠️ Identity notification interaction failed")
+
+        # Step 3: Kill Firefox to release control
+        logger.info("🛑 Stopping Firefox to release focus")
+        d.app_stop("org.mozilla.firefoy")
+        time.sleep(1.5)
+
+        # Step 4: Bring Instagram clone to foreground
+        logger.info(f"📲 Switching back to Instagram clone: {package_name}")
+        if not bring_app_to_foreground(
             d,
             package_name,
             check_xpath='//android.view.View[@content-desc="Check your email"]',
             timeout=10
-        )
+        ):
+            logger.error("❌ Failed to foreground Instagram clone")
+            return "foreground_switch_failed"
 
-
+        # Step 5: Input 2FA code
         helper = UIHelper(d)
         typer = StealthTyper(device_id=d.serial)
 
-        # 🔐 Wait for 2FA input screen
         if not helper.wait_for_xpath('//android.view.View[@content-desc="Check your email"]', timeout=10):
-            logger.error("❌ 2FA screen not ready — Check your email prompt missing")
+            logger.error("❌ 2FA screen not ready — 'Check your email' prompt missing")
             return "2fa_screen_not_ready"
 
         input_xpath = '//android.widget.EditText'
@@ -82,44 +105,42 @@ def handle_2fa(
 
         input_field = d.xpath(input_xpath)
         for attempt in range(3):
-            logger.info(f"👆 Tapping EditText field (attempt {attempt+1})")
+            logger.info(f"👆 Attempt {attempt+1}/3: Tapping input field and entering 2FA code")
+
             if input_field.click_exists(timeout=2):
                 time.sleep(0.5)
-                break
+
+                logger.info("🧼 Clearing text manually via StealthTyper")
+                typer.clear_field_before_typing(xpath=input_xpath)
+
+                logger.info("⌨️ Typing verification code via ADB keyboard")
+                typer.type_text(verification_code)
+                time.sleep(2)
+
+                entered = input_field.get_text() or ""
+                logger.info(f"🔍 Field now contains: '{entered}'")
+
+                if verification_code in entered:
+                    logger.info("✅ Code successfully entered")
+                    break
+                else:
+                    logger.warning("❌ Code mismatch — retrying")
+            else:
+                logger.warning("⚠️ Could not click input field")
+
             time.sleep(1)
+
         else:
-            logger.error("❌ Failed to focus 2FA input field after retries")
-            return "2fa_input_click_failed"
+            logger.error("❌ Code entry failed after all attempts")
+            return "2fa_code_mismatch"
 
-        d.clear_text()
-        time.sleep(0.5)
-        typer.type_text(verification_code)
-        time.sleep(2)
 
-        entered = input_field.get_text() or ""
-        logger.info(f"🔍 Text in input field: '{entered}'")
 
-        if verification_code not in entered:
-            logger.warning("❌ Code not correctly entered — retrying once more")
-            input_field.click()
-            time.sleep(0.5)
-            d.clear_text()
-            time.sleep(0.5)
-            typer.type_text(verification_code)
-            time.sleep(2)
-            entered = input_field.get_text() or ""
-            logger.info(f"🔁 Retried input — field now contains: '{entered}'")
-            if verification_code not in entered:
-                logger.error("❌ Code still not correctly entered")
-                return "2fa_code_mismatch"
-
-        logger.info("✅ Successfully entered 2FA code")
-
-        # ✅ Wait for Save Login screen (no continue logic)
+        # Step 6: Wait for Save Login screen
         save_prompt_xpath = '//android.view.View[@content-desc="Save your login info?"]'
-        logger.info(f"Waiting for element: {save_prompt_xpath}")
+        logger.info(f"🕒 Waiting for Save Login screen: {save_prompt_xpath}")
         if not helper.wait_for_xpath(save_prompt_xpath, timeout=10):
-            logger.error(f"❌ Timeout waiting for element: {save_prompt_xpath}")
+            logger.error("❌ Save login prompt not found")
             return "save_prompt_not_found"
 
         logger.info("✅ Save Login screen appeared — proceeding to post-login handler")
@@ -135,8 +156,6 @@ def handle_2fa(
     except Exception as e:
         logger.error("💥 Exception during 2FA flow: %s", e)
         return "exception"
-
-
 
 class Post2FAHandler:
     def __init__(self, d, username, airtable_client, record_id, base_id, table_name):

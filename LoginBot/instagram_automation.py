@@ -171,7 +171,6 @@ class InstagramAutomation:
             if self.d.xpath(save_prompt_xpath).wait(timeout=10):
                 self.logger.info("✅ 'Save your login info?' prompt detected")
                 if self.d.xpath(save_button_xpath).click_exists(timeout=3):
-                    self.airtable_client.update_record_fields(self.record_id, {"Logged In?": True})
 
                     self.logger.info("✅ Clicked 'Save' button")
                 else:
@@ -180,7 +179,6 @@ class InstagramAutomation:
                 # Update Airtable if context is available
                 if hasattr(self, "airtable_client") and hasattr(self, "record_id"):
                     self.logger.info("📡 Updating Airtable: Logged In = True")
-                    self.airtable_client.update_record_fields(self.record_id, {"Logged In?": True})
 
                 return "login_success"
 

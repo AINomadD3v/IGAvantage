@@ -764,10 +764,6 @@ class Firefox2FAFlow:
                 firefox_package=self.firefox_package
             )
 
-            # ✅ Mark 'Automation Used?' = True after reaching 2FA retrieval phase
-            self.logger.info("📝 Marking 'Automation Used?' = True in Airtable")
-            self.airtable.update_record_fields(self.record_id, {"Automation Used?": True})
-
             if not login.perform_full_login():
                 self.logger.error("❌ Login failed")
                 return None
@@ -786,10 +782,6 @@ class Firefox2FAFlow:
             code = token_retriever.get_2fa_code()
             if code:
                 self.logger.info(f"✅ 2FA code retrieved: {code}")
-
-                # ✅ After successful 2FA, mark 'Logged In?' = True
-                self.logger.info("📝 Marking 'Logged In?' = True in Airtable")
-                self.airtable.update_record_fields(self.record_id, {"Logged In?": True})
 
                 return code
             else:
