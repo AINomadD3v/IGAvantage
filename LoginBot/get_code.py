@@ -462,6 +462,7 @@ class EmailNavigation:
             self.logger.info("🔁 Trying Communities tab first for 2FA code...")
 
             # Step 1: Open sidebar
+            time.sleep(3)
             if not self.open_sidebar():
                 self.logger.error("❌ Failed to open sidebar")
                 return None
@@ -488,6 +489,7 @@ class EmailNavigation:
             time.sleep(2)
 
             # Step 4: Search for 2FA email in community tab
+            # Step 4: Search for 2FA email in community tab
             smart_xpath = '^Hi '
             matches = self.d.xpath(smart_xpath).all()
             self.logger.info(f"📥 Found {len(matches)} candidate email blocks")
@@ -496,33 +498,70 @@ class EmailNavigation:
                 full_text = email_element.attrib.get("text", "")
                 if "tried to log in to your Instagram account" in full_text:
                     self.logger.info(f"📩 Matched 2FA email: {full_text[:100]}...")
+
+                    # Try to extract 6-digit code from the preview
                     match = re.search(r"\b(\d{6})\b", full_text)
                     if match:
                         code = match.group(1)
                         self.logger.info(f"✅ Extracted 2FA code from Communities tab: {code}")
                         return code
                     else:
-                        self.logger.warning("No 6-digit code found in matched email")
-                        return None
+                        self.logger.warning("No 6-digit code found in matched email — opening email to extract")
 
-            self.logger.warning("❌ No 2FA code found in Communities tab — falling back to main container")
+                        try:
+                            # Go up to clickable wrapper for this email
+                            email_xpath = email_element.get_xpath()
+                            wrapper_xpath = email_xpath + '/../..'
+
+                            if not self.d.xpath(wrapper_xpath).click_exists(timeout=3):
+                                self.logger.error("❌ Failed to click matched email block")
+                                return None
+
+                            self.logger.info("✅ Clicked email block — waiting for full view to load")
+                            time.sleep(2)
+
+                            # Attempt to extract 6-digit code from opened email
+                            code_xpath = '//android.view.View[string-length(@text)=6 and translate(@text, "0123456789", "") = ""]'
+
+                            if not self.d.xpath(code_xpath).wait(timeout=10):
+                                self.logger.error("❌ Code element not found in opened email")
+                                return None
+
+                            for el in self.d.xpath(code_xpath).all():
+                                text = el.attrib.get("text", "")
+                                if text.isdigit() and len(text) == 6:
+                                    self.logger.info(f"✅ Found 2FA code in full email: {text}")
+                                    return text
+
+                            self.logger.warning("❌ No matching 2FA code found in opened email")
+                            return None
+
+                        except Exception as e:
+                            self.logger.error(f"💥 Exception during fallback email open: {e}")
+                            return None
+
+            # If no matches found at all
+            self.logger.warning("❌ No 2FA code found in Communities tab — pressing back and falling back to main container")
+            self.d.press("back")
+            time.sleep(2)
+
 
             # Step 5: Fallback — check if user is logged in
-            if not self.verify_logged_in():
-                self.logger.error("❌ Login state not valid, skipping main container check")
-                return None
+            # if not self.verify_logged_in():
+            #     self.logger.error("❌ Login state not valid, skipping main container check")
+            #     return None
 
             self.logger.info("✅ Logged in — trying to extract code from main container")
 
             # Optional: dismiss translation popup
-            translation_xpath = '^Try private translations'
-            for _ in range(5):
-                if self.d.xpath(translation_xpath).exists:
-                    self.logger.info("📌 Translation popup appeared — dismissing")
-                    self.popup_handler.handle_all_popups()
-                    time.sleep(1.5)
-                    break
-                time.sleep(1)
+            # translation_xpath = '^Try private translations'
+            # for _ in range(5):
+            #     if self.d.xpath(translation_xpath).exists:
+            #         self.logger.info("📌 Translation popup appeared — dismissing")
+            #         self.popup_handler.handle_all_popups()
+            #         time.sleep(1.5)
+            #         break
+            #     time.sleep(1)
 
             # Step 6: Try main container extraction
             code = self.find_code_in_main_container()

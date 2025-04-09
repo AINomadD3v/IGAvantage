@@ -5,32 +5,24 @@ import uiautomator2 as u2
 logger = logging.getLogger(__name__)
 
 
+import time
+import logging
+import uiautomator2 as u2
+
+logger = logging.getLogger(__name__)
+
+
 class NewIdentityHandler:
     def __init__(self, driver: u2.Device):
         self.d = driver
 
-    def open_notification_panel(self, delay: float = 2.0):
-        logger.info("🔽 Attempting to open notification panel")
-        self.d.open_notification()
-        time.sleep(delay)
-
-        if not self.is_notification_panel_open():
-            logger.warning("⚠️ open_notification() did not work — performing manual swipe")
-            self.manual_swipe_down()
-            time.sleep(delay)
-
-    def manual_swipe_down(self):
+    def handle_notification(self, text: str, timeout: int = 10) -> bool:
+        logger.info("🔽 Performing manual swipe to open notification panel")
         width, height = self.d.window_size()
         x = width // 2
         self.d.swipe(x, int(height * 0.01), x, int(height * 0.5), 0.2)
+        time.sleep(2)
 
-    def is_notification_panel_open(self) -> bool:
-        # Use advanced XPath without package name
-        panel_xpath = '^.*notification_panel'
-        return self.d.xpath(panel_xpath).exists
-
-    def handle_notification(self, text: str, timeout: int = 10) -> bool:
-        self.open_notification_panel()
         end_time = time.time() + timeout
 
         while time.time() < end_time:
@@ -83,26 +75,31 @@ class NewIdentityHandler:
                     logger.info("⏳ Waiting for post-click popups...")
                     time.sleep(5)
 
-                    # Handle Firefox old version warning
+                    # Unified popup wait logic
                     old_version_title = "//android.widget.TextView[@resource-id='android:id/alertTitle']"
                     ok_button = "//android.widget.Button[@resource-id='android:id/button1']"
-                    if self.d.xpath(old_version_title).exists:
-                        logger.info("⚠️ Old version warning detected — clicking OK")
-                        self.d.xpath(ok_button).click_exists(timeout=3)
-                        time.sleep(1)
-
-                    # Handle Firefox notification permission prompt
                     notif_text_xpath = "//android.widget.TextView[@resource-id='com.android.permissioncontroller:id/permission_message']"
                     notif_btn_xpath = "//android.widget.Button[@resource-id='com.android.permissioncontroller:id/permission_allow_button']"
-                    logger.info("🔐 Checking for Firefox notification permission prompt")
-                    for _ in range(6):
+
+                    logger.info("🔐 Waiting for either old version warning or permission prompt...")
+
+                    popup_timeout = 10
+                    start = time.time()
+                    while time.time() - start < popup_timeout:
+                        if self.d.xpath(old_version_title).exists:
+                            logger.info("⚠️ Old version warning detected — clicking OK")
+                            self.d.xpath(ok_button).click_exists(timeout=3)
+                            time.sleep(1)
+                            continue
+
                         if self.d.xpath(notif_text_xpath).exists:
                             logger.info("✅ Permission prompt detected — clicking Allow")
                             self.d.xpath(notif_btn_xpath).click_exists(timeout=3)
                             break
-                        time.sleep(1)
+
+                        time.sleep(0.5)
                     else:
-                        logger.info("ℹ️ No permission prompt appeared")
+                        logger.info("ℹ️ No relevant popups appeared after waiting")
 
                     logger.info("🎯 New identity flow fully completed")
                     return True
@@ -114,8 +111,6 @@ class NewIdentityHandler:
 
         logger.error("❌ Timeout: No valid Firefox notification clicked")
         return False
-
-
 
 def new_identity(driver: u2.Device, timeout: int = 10) -> bool:
     handler = NewIdentityHandler(driver)

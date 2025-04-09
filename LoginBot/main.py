@@ -12,6 +12,7 @@ from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
 from Shared.core_ig_actions import bring_app_to_foreground, launch_app_via_adb
 from Shared.new_identity import new_identity
+from Shared.popup_handler import PopupHandler
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -304,6 +305,17 @@ if __name__ == "__main__":
         logger.info(f"🚀 Attempting to launch Instagram clone: {package_name}")
         core_ig_actions.launch_app_via_adb(device_id, package_name)
         time.sleep(4)
+
+        # 🔧 Inject helper + watcher
+        helper = UIHelper(d)
+        helper.record_id = record_id
+        helper.base_id = base_id
+        helper.table_id = table_id
+        helper.airtable_client = airtable_client
+        helper.package_name = package_name
+
+        popup_handler = PopupHandler(d, helper)
+        popup_handler.register_watchers()
 
         automation = InstagramAutomation(
             d,

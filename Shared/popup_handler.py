@@ -153,6 +153,10 @@ class PopupHandler:
             .when("//*[contains(@content-desc, 'Cancel')]") \
             .click()
 
+        w("account_suspended") \
+            .when("^We suspended your account") \
+            .call(self.handle_suspension)
+
 
         w.start()
         self.logger.info("✅ Popup watchers registered and started.")
@@ -296,6 +300,38 @@ class PopupHandler:
             self.logger.error(f"Error in try_dismiss_trackers_popup: {e}")
         return False
 
+    def handle_suspension(self, selector=None, d=None, source=None):
+        try:
+            self.logger.warning("🚫 WATCHER: Account appears suspended")
+
+            if hasattr(self, "_suspension_handled") and self._suspension_handled:
+                self.logger.info("⏭️ Suspension already handled this session")
+                return
+
+            if not hasattr(self.helper, "record_id") or not hasattr(self.helper, "airtable_client"):
+                self.logger.error("❌ Missing record_id or Airtable client in PopupHandler context")
+                return
+
+            # 🚫 Airtable update
+            airtable = self.helper.airtable_client
+            airtable.base_id = self.helper.base_id
+            airtable.table_id = self.helper.table_id
+            airtable.update_record_fields(self.helper.record_id, {"Status": "Banned"})
+            self.logger.info("✅ Updated Airtable: Status = 'Banned'")
+
+            # 💀 Kill the suspended Instagram clone
+            package = getattr(self.helper, "package_name", None)
+            if package:
+                self.logger.info(f"🛑 Stopping suspended app: {package}")
+                d.app_stop(package)
+            else:
+                self.logger.warning("⚠️ No package name set — cannot stop app")
+
+            self._suspension_handled = True
+
+        except Exception as e:
+            self.logger.error(f"💥 Error handling suspension watcher: {e}")
+
 def photo_removed_callback(d, sel):
     logger.info("photo_removed_popup watcher triggered!")
     try:
@@ -328,12 +364,15 @@ def photo_removed_callback(d, sel):
     else:
         logger.error("No Cancel button found with fallback XPath.")
 
+
 if __name__ == "__main__":
     import uiautomator2 as u2
-    from ui_helper import UIHelper
+    from Shared.ui_helper import UIHelper
+    from Shared.airtable_manager import AirtableClient
     import logging
+    import time
 
-    logger = logging.getLogger("TestCashbackPopup")
+    logger = logging.getLogger("TestAccountSuspendedWatcher")
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -343,17 +382,34 @@ if __name__ == "__main__":
     try:
         logger.info("🔗 Connecting to device...")
         d = u2.connect()
+
+        # 🔧 Hardcoded Airtable record info
+        record_id = "reczBLvQ76R2H6BRl"
+        base_id = "appubnJsm4tcUpVhg"
+        table_id = "tblpCwgzs4lauL2ZZ"
+
+        # Setup Airtable client and inject into helper
+        airtable_client = AirtableClient()
+        airtable_client.base_id = base_id
+        airtable_client.table_id = table_id
+
         helper = UIHelper(d)
+        helper.record_id = record_id
+        helper.base_id = base_id
+        helper.table_id = table_id
+        helper.airtable_client = airtable_client
+
+        # Initialize and register watchers
         popup_handler = PopupHandler(d, helper)
+        popup_handler.register_watchers()
 
-        logger.info("🧪 Running cashback popup test...")
-        success = popup_handler.handle_cashback_popup()
+        logger.info("🧪 Waiting for 'We suspended your account' watcher to trigger...")
+        for _ in range(60):  # ~30 seconds
+            d.watcher.run()
+            time.sleep(0.5)
 
-        if success:
-            logger.info("✅ Cashback popup dismissed successfully")
-        else:
-            logger.warning("❌ Cashback popup not dismissed")
+        logger.info("🛑 Done watching — check logs for result.")
 
     except Exception as e:
-        logger.error(f"💥 Error during cashback popup test: {e}")
+        logger.error(f"💥 Test failed: {e}")
 
