@@ -1,3 +1,5 @@
+# Shared.scroller.py
+
 import time
 import random
 import hashlib
@@ -9,7 +11,7 @@ from Shared.airtable_manager import AirtableClient
 
 logger = setup_logger(name='Scroller')
 
-KEYWORDS = ["model", "fitness", "bikini", "gym girl", "fit girls", "fitness model" ]
+KEYWORDS = ["model", "fitness", "american model", "bikini", "gym girl", "fit girls", "fitness model", "hot woman", "blonde model", "asian model" ]
 
 CONFIG = {
     # Delay ranges (in seconds)
@@ -375,28 +377,29 @@ def perform_keyword_search(device, keyword):
         logger.error(f"❌ Failed during keyword search flow: {e}")
         return False
 
-def run_warmup_session(device_id, package_name):
+def run_warmup_session(device_id, package_name, max_runtime_seconds=180):
     d = u2.connect(device_id)
     CONFIG["package_name"] = package_name
     ui = UIHelper(d)
 
     logger.info(f"📱 Launching Instagram app: {package_name}")
-    try:
-        # Ensure clean start
-        d.app_stop(package_name)
-        d.app_start(package_name)
-
-        explore_xpath = '//android.widget.FrameLayout[@content-desc="Search and explore"]'
-        if not d.xpath(explore_xpath).wait(timeout=15.0):
-            logger.warning("⚠️ Explore tab not found — trying fallback ADB launch...")
-            d.shell(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
-            if not d.xpath(explore_xpath).wait(timeout=15.0):
-                raise RuntimeError("Instagram app did not load UI after fallback")
-
-        logger.info("✅ Instagram UI ready — Explore tab found")
-    except Exception as e:
-        logger.error(f"❌ Failed to launch Instagram app: {e}")
-        return
+    # TODO Add back in for warmup on non new login accounts
+    # try:
+    #     # Ensure clean start
+    #     d.app_stop(package_name)
+    #     d.app_start(package_name)
+    #
+    #     explore_xpath = '//android.widget.FrameLayout[@content-desc="Search and explore"]'
+    #     if not d.xpath(explore_xpath).wait(timeout=15.0):
+    #         logger.warning("⚠️ Explore tab not found — trying fallback ADB launch...")
+    #         d.shell(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+    #         if not d.xpath(explore_xpath).wait(timeout=15.0):
+    #             raise RuntimeError("Instagram app did not load UI after fallback")
+    #
+    #     logger.info("✅ Instagram UI ready — Explore tab found")
+    # except Exception as e:
+    #     logger.error(f"❌ Failed to launch Instagram app: {e}")
+    #     return
 
     seen_hashes = set()
     all_reels = []
@@ -418,8 +421,9 @@ def run_warmup_session(device_id, package_name):
     next_idle_at = random.randint(*CONFIG["idle_after_actions"])
 
     for i in range(CONFIG["max_scrolls"]):
-        if time.time() - start_time > CONFIG["session_duration_secs"]:
-            logger.info("⏰ Session time complete. Ending.")
+        elapsed = time.time() - start_time
+        if elapsed > max_runtime_seconds:
+            logger.info(f"⏰ Runtime limit ({max_runtime_seconds}s) exceeded. Ending session.")
             break
 
         logger.info(f"Scroll iteration {i + 1}")
@@ -478,8 +482,9 @@ def run_warmup_session(device_id, package_name):
     for r in session_stats:
         logger.info(f"     @{r['username']}: liked={r['liked']}, comments={r['commented']}, likes='{r['likes']}', reshares='{r['reshares']}'")
 
-     # 🧹 Fully terminate the app before returning
+    # 🧹 Fully terminate the app before returning
     force_stop_app(d, package_name)
+
 
 
 def main():

@@ -157,6 +157,10 @@ class PopupHandler:
             .when("^We suspended your account") \
             .call(self.handle_suspension)
 
+        w("firefox_color_popup") \
+            .when("//*[contains(@text, 'Try a splash')]") \
+            .when("//*[contains(@content-desc, 'Close tab')]") \
+            .click()
 
         w.start()
         self.logger.info("✅ Popup watchers registered and started.")

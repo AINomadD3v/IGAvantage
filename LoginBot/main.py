@@ -13,6 +13,7 @@ from Shared.airtable_manager import AirtableClient
 from Shared.core_ig_actions import bring_app_to_foreground, launch_app_via_adb
 from Shared.new_identity import new_identity
 from Shared.popup_handler import PopupHandler
+from InterActions import scroller
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -265,17 +266,14 @@ if __name__ == "__main__":
         view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
         logger.info(f"🔑 IG_ARMY_BASE_ID = {base_id}")
 
-
         if not all([base_id, table_id, view_id]):
             raise Exception("❌ Missing required IG Army env variables")
 
         logger.info(f"📄 Using IG Army base_id={base_id}, table_id={table_id}, view_id={view_id}")
 
         airtable_client = AirtableClient()
-        # 💡 Set base_id + table_id explicitly for update_record_fields()
         airtable_client.base_id = base_id
         airtable_client.table_id = table_id
-
 
         account_data = airtable_client.get_single_active_account(
             base_id=base_id,
@@ -293,7 +291,7 @@ if __name__ == "__main__":
         email = fields.get("Email")
         email_password = fields.get("Email Password")
         package_name = fields.get("Package Name")
-        device_id = fields.get("Device ID")  # 🔐 New field
+        device_id = fields.get("Device ID")
 
         if not all([username, password, email, email_password, device_id]):
             raise Exception("❌ Missing required fields in Airtable record")
@@ -306,7 +304,7 @@ if __name__ == "__main__":
         core_ig_actions.launch_app_via_adb(device_id, package_name)
         time.sleep(4)
 
-        # 🔧 Inject helper + watcher
+        # 🔧 Inject helper + popup watcher
         helper = UIHelper(d)
         helper.record_id = record_id
         helper.base_id = base_id
@@ -328,6 +326,8 @@ if __name__ == "__main__":
         if login_result == "login_success":
             logger.info("✅ Logged in successfully without 2FA")
             result = "login_success"
+            logger.info("🚀 Starting warmup session after login")
+            scroller.run_warmup_session(device_id=device_id, package_name=package_name, session_duration_secs=120)
 
         elif login_result == "2fa_required":
             logger.info("🔐 2FA required — proceeding with verification")
@@ -345,6 +345,10 @@ if __name__ == "__main__":
                 allow_manual_fallback=True
             )
 
+            if result is True:
+                logger.info("✅ 2FA + post-login flow succeeded — starting warmup")
+                scroller.run_warmup_session(device_id=device_id, package_name=package_name, max_runtime_seconds=120)
+
         elif login_result == "login_failed":
             logger.error("❌ Login failed due to incorrect credentials")
             result = "login_failed"
@@ -360,3 +364,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         logger.error(f"❌ Process failed with error: {e}")
+
