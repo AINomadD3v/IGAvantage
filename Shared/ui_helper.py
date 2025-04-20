@@ -203,11 +203,6 @@ class UIHelper:
             return False
 
 
-
-    def scroll_up(self, scale: float = 0.8):
-        self.logger.debug(f"Scrolling up with scale={scale}")
-        self.d.swipe_ext("up", scale=scale)
-
     def find_prompt_xpath(self, keywords: list[str], timeout=10) -> Optional[str]:
         self.logger.info(f"Searching for prompt matching: {keywords}")
         start_time = time.time()

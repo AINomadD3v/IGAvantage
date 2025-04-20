@@ -223,7 +223,6 @@ class EmailLogin:
 
         logger.info("▶️ Starting post-login handling")
 
-        # ✅ Watchers now handle all popups — no need for manual save password logic
 
         logger.info("⏳ Verifying inbox UI up to 30s post-login")
         email_nav = EmailNavigation(driver=d, helper=self.helper, popup_handler=self.popup_handler)

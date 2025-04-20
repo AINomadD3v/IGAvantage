@@ -4,14 +4,17 @@ import time
 import random
 import hashlib
 import uiautomator2 as u2
+from Shared import popup_handler
 from Shared.ui_helper import UIHelper
 from Shared.logger_config import setup_logger
 from Shared.stealth_typing import StealthTyper
 from Shared.airtable_manager import AirtableClient
+from Shared.core_ig_actions import launch_app_via_adb
+from Shared.popup_handler import PopupHandler
 
 logger = setup_logger(name='Scroller')
 
-KEYWORDS = ["model", "fitness", "american model", "bikini", "gym girl", "fit girls", "fitness model", "hot woman", "blonde model", "asian model" ]
+KEYWORDS = ["female model", "female fitness", "american model", "bikini", "gym girl", "fit girls", "fitness model", "hot woman", "blonde model", "asian model" ]
 
 CONFIG = {
     # Delay ranges (in seconds)
@@ -26,7 +29,6 @@ CONFIG = {
     },
 
     # Session settings
-    "session_duration_secs": 240,
     "max_scrolls": 100,
     "percent_reels_to_watch": 0.8,  # 0.0 to 1.0
     "watch_time_range": (4.0, 9.0),  # 👈 Add this
@@ -110,178 +112,72 @@ def extract_search_page_reels(device):
 
     return reels
 
+
 def process_reel(device, reel_post, ui, like_probability, stop_callback):
     full_watch_time = random.uniform(*CONFIG["watch_time_range"])
     like_delay = random.uniform(1.2, full_watch_time - 0.5)
-    sample_pool = [random.uniform(1.0, full_watch_time - 0.2) for _ in range(3)]
-    num_interactions = min(len(sample_pool), random.randint(1, 2))
-    interaction_times = sorted(random.sample(sample_pool, k=num_interactions))
+    interaction_times = sorted(random.sample(
+        [random.uniform(1.0, full_watch_time - 0.2) for _ in range(3)],
+        k=min(2, 3)
+    ))
 
     logger.info(f"⏱️ Watching reel for {full_watch_time:.2f}s (like at ~{like_delay:.2f}s)")
     start = time.time()
+    end = start + full_watch_time
     liked = False
     commented = False
     should_comment = random.random() < CONFIG["comment_probability"]
+    next_interaction = interaction_times.pop(0) if interaction_times else None
 
+    # Tap the reel
+    if not attempt_reel_tap(device, reel_post):
+        return
 
-    # Retry tap loop (in case UI loads late)
-    max_tap_attempts = 2
-    for attempt in range(max_tap_attempts):
-        logger.info(f"👆 Tapping reel at bounds {reel_post['bounds']} for {reel_post['short_id']} (attempt {attempt+1})")
+    random_delay("after_post_tap")
 
-        matching_xpath = None
-        for el in device.xpath("//*").all():
-            if el.attrib.get("bounds", "") == reel_post["bounds"]:
-                matching_xpath = el.get_xpath()
-                logger.info(f"🕵️ Matched XPath for tapped bounds: {matching_xpath}")
-                break
-
-        if not matching_xpath:
-            logger.warning("⚠️ Could not resolve XPath for tapped bounds")
-
-        try:
-            reel_xpath = f'//android.widget.ImageView[@content-desc="{reel_post["desc"]}"]'
-            reel_el = device.xpath(reel_xpath).get(timeout=2.0)
-            reel_el.click()
-            logger.info(f"👆 Clicked reel via XPath: {reel_xpath}")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to click reel element directly: {e}")
-            return
-
-        random_delay("after_post_tap")
-
-        like_btn = device.xpath('//*[@content-desc="Like"]')
-        try:
-            el = like_btn.get(timeout=4.0)
-            if el and el.attrib.get("bounds"):
-                break
-        except Exception:
-            pass
-
-        if attempt == max_tap_attempts - 1:
-            logger.warning("Reel UI did not load, skipping.")
-            return
-
-    def get_desc(query):
-        if time.time() - start > full_watch_time:
-            return None
-        try:
-            el = device.xpath(query).get(timeout=2.0)
-            return el.attrib.get("content-desc", "") if el else None
-        except Exception:
-            return None
-
-    def get_text(query):
-        if time.time() - start > full_watch_time:
-            return None
-        try:
-            el = device.xpath(query).get(timeout=2.0)
-            return el.attrib.get("text", "") if el else None
-        except Exception:
-            return None
-
-    username = get_desc('//android.widget.ImageView[contains(@content-desc, "Profile picture of")]')
-    caption = get_desc(f'//android.view.ViewGroup[@resource-id="{CONFIG["package_name"]}:id/clips_caption_component"]//android.view.ViewGroup[contains(@content-desc, "")]')
-    likes = get_desc('//android.view.ViewGroup[contains(@content-desc, "View likes")]')
-    reshares = get_desc('//android.view.ViewGroup[contains(@content-desc, "Reshare number")]')
-    sound = get_desc('//android.view.ViewGroup[contains(@content-desc, "Original audio")]')
-    follow_btn = get_text('//android.widget.Button[@text="Follow"]')
+    # Extract reel metadata (non-blocking, quick)
+    username = get_desc(device, '//android.widget.ImageView[contains(@content-desc, "Profile picture of")]', full_watch_time, start)
+    caption = get_desc(device, f'//android.view.ViewGroup[@resource-id="{CONFIG["package_name"]}:id/clips_caption_component"]//android.view.ViewGroup[contains(@content-desc, "")]', full_watch_time, start)
+    likes = get_desc(device, '//android.view.ViewGroup[contains(@content-desc, "View likes")]', full_watch_time, start)
+    reshares = get_desc(device, '//android.view.ViewGroup[contains(@content-desc, "Reshare number")]', full_watch_time, start)
+    sound = get_desc(device, '//android.view.ViewGroup[contains(@content-desc, "Original audio")]', full_watch_time, start)
+    follow_btn = get_text(device, '//android.widget.Button[@text="Follow"]', full_watch_time, start)
 
     if sound and "• Original audio" in sound:
         sound = sound.split("• Original audio")[0].strip()
 
     logger.info(f"[REEL DATA] user={username}, likes={likes}, reshares={reshares}, caption={caption}, sound={sound}, follow={follow_btn}")
 
-    while time.time() - start < full_watch_time:
+    # Central timing loop
+    while time.time() < end:
         elapsed = time.time() - start
 
-        if interaction_times and elapsed >= interaction_times[0]:
-            light_interaction(device, ui)
-            interaction_times.pop(0)
+        if next_interaction and elapsed >= next_interaction:
+            light_interaction(device)
+            next_interaction = interaction_times.pop(0) if interaction_times else None
 
         if not liked and elapsed >= like_delay and random.random() < like_probability:
-            logger.info("Liking this reel mid-watch...")
-
-            like_btn = device.xpath('//*[@content-desc="Like"]')
-
-            for retry in range(3):
-                try:
-                    el = like_btn.get(timeout=1.5)
-                    like_bounds = el.attrib.get("bounds", "")
-                    ui._tap_random_in_bounds(like_bounds, label=f"Like Button (attempt {retry+1})")
-                    time.sleep(1.2)
-
-                    # Re-fetch the element to confirm state change
-                    liked_el = like_btn.get(timeout=1.5)
-                    if liked_el.attrib.get("selected") == "true":
-                        logger.info("❤️ Like confirmed.")
-                        liked = True
-                        break
-                    else:
-                        logger.warning("⚠️ Like action failed — button not selected.")
-                except Exception as e:
-                    logger.warning(f"Failed to like (attempt {retry+1}): {e}")
-
+            liked = attempt_like(device, ui)
+            if liked:
+                logger.info("❤️ Like confirmed.")
             else:
-                logger.warning("❌ All like attempts failed.")
-
-            # Check if blocked
-            for _ in range(3):
-                if device.xpath(f'//*[@resource-id="{CONFIG["package_name"]}:id/image_button"]').exists:
-                    logger.warning("⚠️ Instagram blocked the like action")
+                logger.warning("❌ Like failed or blocked.")
+                if stop_callback:
                     stop_callback()
-                    return
-                time.sleep(1)
+                break
 
+        if not commented and should_comment and elapsed >= full_watch_time * 0.6:
+            commented = attempt_comment(device, ui)
 
+        time.sleep(0.2)
 
-            liked = True
-
-        if not commented and should_comment:
-            logger.info("💬 Attempting to comment mid-watch...")
-            try:
-                success = ui.tap_random_within_element('//*[contains(@content-desc, "Comment")]', label="Comment Button")
-                if success:
-                    time.sleep(random.uniform(1.2, 2.0))
-                    device.swipe(540, 1600, 540, 1000, 0.2)
-                    time.sleep(random.uniform(1.5, 2.5))
-                    device.press("back")
-                    logger.info("💬 Comment interaction complete")
-                    commented = True
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to perform comment interaction: {e}")
-
-        time.sleep(0.4)
-
-        # fallback: like near end if not already liked and should have
+    # Fallback like
     if not liked and random.random() < like_probability:
         logger.info("📌 Fallback: Liking reel near end of watch window.")
-        try:
-            el = device.xpath('//*[@content-desc="Like"]').get(timeout=1.5)
-            like_bounds = el.attrib.get("bounds", "")
-            ui._tap_random_in_bounds(like_bounds, label="Fallback Like Button")
-            liked = True
-        except Exception as e:
-            logger.warning(f"⚠️ Failed fallback like: {e}")
+        liked = attempt_like(device, ui)
 
-    back_btn = device.xpath('//*[@content-desc="Back"]')
-    if back_btn.exists:
-        try:
-            back_btn.get().click()
-            logger.info("🖐 Back button clicked directly")
-            time.sleep(1.5)
-        except Exception as e:
-            logger.warning(f"Failed to click Back button: {e}")
-    else:
-        logger.warning("Back button not found after reel watch")
+    exit_reel_view(device)
 
-    for _ in range(10):
-        if not device.xpath('//*[@content-desc="Like"]').exists:
-            logger.info("✅ Exited reel view")
-            break
-        time.sleep(0.5)
-    else:
-        logger.warning("⚠️ Still detected in reel UI after back, continuing anyway")
     return {
         "username": username,
         "likes": likes,
@@ -290,26 +186,102 @@ def process_reel(device, reel_post, ui, like_probability, stop_callback):
         "liked": liked,
         "commented": commented
     }
+def light_interaction(device):
+    action = random.choice(["tap_to_pause_resume", "mini_horizontal_scrub", "minor_volume_change"])
 
-
-
-
-def light_interaction(device, ui):
-    action = random.choice(["pause_resume_tap", "swipe_comments", "side_scrub", "comment_scroll"])
-    logger.info(f"👆 Performing light interaction: {action}")
-
-    if action == "pause_resume_tap":
-        x = random.randint(300, 800)
-        y = random.randint(800, 1200)
-        device.click(x, y)
-
-    elif action == "swipe_comments":
-        device.swipe(540, 1000, 540, 1300, 0.1)
-
-    elif action == "side_scrub":
+    if action == "tap_to_pause_resume":
+        # Light tap near center — simulates pausing and resuming
         x = random.randint(400, 700)
+        y = random.randint(800, 1100)
+        device.click(x, y)
+        logger.info("👆 Light interaction: pause/resume tap")
+
+    elif action == "mini_horizontal_scrub":
+        # Slight side scrub motion — mimics user testing timeline
+        x = random.randint(400, 600)
         y = random.randint(1000, 1300)
-        device.swipe(x, y, x + random.randint(-50, 50), y, 0.1)
+        offset = random.randint(10, 30)
+        device.swipe(x, y, x + offset, y, 0.05)
+        logger.info("👉 Light interaction: mini scrub")
+
+    elif action == "minor_volume_change":
+        # Simulates user pressing volume up/down quickly
+        key = random.choice(["KEYCODE_VOLUME_UP", "KEYCODE_VOLUME_DOWN"])
+        device.shell(f"input keyevent {key}")
+        logger.info(f"🔊 Light interaction: {key.replace('KEYCODE_', '').lower()}")
+
+def get_desc(device, xpath, timeout_window, start_time):
+    if time.time() - start_time > timeout_window:
+        return None
+    try:
+        el = device.xpath(xpath).get(timeout=2.0)
+        return el.attrib.get("content-desc", "") if el else None
+    except Exception:
+        return None
+
+def get_text(device, xpath, timeout_window, start_time):
+    if time.time() - start_time > timeout_window:
+        return None
+    try:
+        el = device.xpath(xpath).get(timeout=2.0)
+        return el.attrib.get("text", "") if el else None
+    except Exception:
+        return None
+
+def attempt_reel_tap(device, reel_post):
+    for attempt in range(2):
+        try:
+            reel_xpath = f'//android.widget.ImageView[@content-desc="{reel_post["desc"]}"]'
+            el = device.xpath(reel_xpath).get(timeout=2.0)
+            el.click()
+            logger.info(f"👆 Clicked reel via XPath: {reel_xpath}")
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to click reel (attempt {attempt + 1}): {e}")
+    return False
+
+def attempt_like(device, ui):
+    try:
+        el = device.xpath('//*[@content-desc="Like"]').get(timeout=1.5)
+        bounds = el.attrib.get("bounds", "")
+        ui._tap_random_in_bounds(bounds, label="Like Button")
+        time.sleep(1.0)
+        el = device.xpath('//*[@content-desc="Like"]').get(timeout=1.5)
+        return el.attrib.get("selected") == "true"
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to like: {e}")
+        return False
+
+def attempt_comment(device, ui):
+    logger.info("💬 Attempting to comment mid-watch...")
+    try:
+        if ui.tap_random_within_element('//*[contains(@content-desc, "Comment")]', label="Comment Button"):
+            time.sleep(1.5)
+            device.swipe(540, 1600, 540, 1000, 0.2)
+            time.sleep(1.5)
+            device.press("back")
+            logger.info("💬 Comment interaction complete")
+            return True
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to perform comment interaction: {e}")
+    return False
+
+def exit_reel_view(device):
+    try:
+        back_btn = device.xpath('//*[@content-desc="Back"]')
+        if back_btn.exists:
+            back_btn.get().click()
+            logger.info("🖐 Back button clicked directly")
+        time.sleep(1.5)
+    except Exception as e:
+        logger.warning(f"Failed to click Back button: {e}")
+
+    for _ in range(10):
+        if not device.xpath('//*[@content-desc="Like"]').exists:
+            logger.info("✅ Exited reel view")
+            return
+        time.sleep(0.5)
+    logger.warning("⚠️ Still in reel UI after back")
 
 
 def navigate_to_explore(device, ui):
@@ -377,29 +349,31 @@ def perform_keyword_search(device, keyword):
         logger.error(f"❌ Failed during keyword search flow: {e}")
         return False
 
-def run_warmup_session(device_id, package_name, max_runtime_seconds=180):
+def run_warmup_session(device_id, package_name, max_runtime_seconds=180, ui_helper=None):
     d = u2.connect(device_id)
     CONFIG["package_name"] = package_name
-    ui = UIHelper(d)
+    ui = ui_helper or UIHelper(d)
+
+    popup_handler = PopupHandler(d, helper=ui)
+    popup_handler.register_watchers()
+    d.watcher.start()
 
     logger.info(f"📱 Launching Instagram app: {package_name}")
-    # TODO Add back in for warmup on non new login accounts
-    # try:
-    #     # Ensure clean start
-    #     d.app_stop(package_name)
-    #     d.app_start(package_name)
-    #
-    #     explore_xpath = '//android.widget.FrameLayout[@content-desc="Search and explore"]'
-    #     if not d.xpath(explore_xpath).wait(timeout=15.0):
-    #         logger.warning("⚠️ Explore tab not found — trying fallback ADB launch...")
-    #         d.shell(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
-    #         if not d.xpath(explore_xpath).wait(timeout=15.0):
-    #             raise RuntimeError("Instagram app did not load UI after fallback")
-    #
-    #     logger.info("✅ Instagram UI ready — Explore tab found")
-    # except Exception as e:
-    #     logger.error(f"❌ Failed to launch Instagram app: {e}")
-    #     return
+    try:
+        launch_app_via_adb(device_id, package_name)
+        logger.info("🕒 Waiting 15s to allow popup watchers to trigger...")
+        time.sleep(15)
+
+
+        explore_xpath = '//android.widget.FrameLayout[@content-desc="Search and explore"]'
+        if not d.xpath(explore_xpath).wait(timeout=15.0):
+            raise RuntimeError("Instagram UI not detected after launch")
+
+        logger.info("✅ Instagram UI ready — Explore tab found")
+    except Exception as e:
+        logger.error(f"❌ Failed to launch Instagram app via ADB: {e}")
+        return
+
 
     seen_hashes = set()
     all_reels = []
@@ -469,6 +443,8 @@ def run_warmup_session(device_id, package_name, max_runtime_seconds=180):
         random_delay("before_scroll")
         ui.scroll_up()
 
+    duration = time.time() - start_time
+    logger.info(f"🕒 Warmup session runtime: {duration:.2f}s")
     logger.info(f"✅ Warmup complete. Total unique reels interacted: {len(all_reels)}")
 
     total_liked = sum(1 for r in session_stats if r.get("liked"))
@@ -484,8 +460,6 @@ def run_warmup_session(device_id, package_name, max_runtime_seconds=180):
 
     # 🧹 Fully terminate the app before returning
     force_stop_app(d, package_name)
-
-
 
 def main():
     client = AirtableClient(table_key="warmup_accounts")
@@ -510,7 +484,22 @@ def main():
                 d.app_stop(last_package)
                 time.sleep(1)
 
-            run_warmup_session(device_id=device_id, package_name=package_name)
+            # 🔌 Inject context for Airtable + PopupHandler
+            d = u2.connect(device_id)
+            ui = UIHelper(d)
+            ui.airtable_client = client
+            ui.record_id = record_id
+            ui.package_name = package_name
+            ui.base_id = client.base_id
+            ui.table_id = client.table_id
+
+            run_warmup_session(
+                device_id=device_id,
+                package_name=package_name,
+                max_runtime_seconds=180,
+                ui_helper=ui
+            )
+
             client.update_record_fields(record_id, {"Daily Warmup Complete": True})
             logger.info(f"✅ Warmup complete and marked for @{username}")
             last_package = package_name
@@ -518,7 +507,6 @@ def main():
         except Exception as e:
             logger.error(f"❌ Warmup failed for @{username}: {e}")
             client.update_record_fields(record_id, {"Warmup Errors": str(e)})
-
 
 if __name__ == "__main__":
     main()
