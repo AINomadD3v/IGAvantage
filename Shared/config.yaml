@@ -1,0 +1,135 @@
+# Shared/config.yaml
+# Central configuration file for the IGAvantage project
+
+# --- Scroller/Warmup Bot Configuration ---
+scroller:
+  keywords: # Keywords for search discovery
+    - "female model"
+    - "female fitness"
+    - "american model"
+    - "bikini"
+    - "gym girl"
+    - "fit girls"
+    - "fitness model"
+    - "hot woman"
+    - "blonde model"
+    - "asian model"
+  delays: # Delay ranges in seconds [min, max]
+    after_like: [1.8, 2.3]
+    between_scrolls: [2.0, 3.0]
+    before_scroll: [1.5, 2.2]
+    after_post_tap: [1.0, 1.5]
+    after_comment: [1.2, 2.0]
+    comment_scroll: [1.5, 2.5]
+    back_delay: 1.0
+    # Add other delays if needed
+  max_scrolls: 100 # Max scrolls per session
+  percent_reels_to_watch: 0.8 # Percentage of found reels to interact with
+  watch_time_range: [4.0, 9.0] # Min/max seconds to "watch" a reel
+  like_probability: 0.7 # Probability (0.0 to 1.0) of liking a processed reel
+  comment_probability: 0.25 # Probability of simulating a comment interaction
+  idle_after_actions: [3, 6] # Perform idle break after this many actions [min, max]
+  idle_duration_range: [2, 6] # Duration of idle break in seconds [min, max]
+  # package_name: "com.instagram.android" # This might be better passed dynamically based on the account record
+
+# --- Popup Watcher Configuration ---
+# List of popups to be handled by PopupHandler watchers or manual checks.
+# 'name': Unique identifier for the watcher/popup.
+# 'text_xpath': XPath/Text selector to identify the popup's presence.
+# 'button_xpath': XPath/Text selector for the button to click for dismissal.
+# 'callback': (Optional) Name of a method in PopupHandler (or global function) to call instead of clicking.
+popups:
+  # --- Popups likely from original popup_config.json (examples) ---
+  - name: "allow_media_access"
+    text_xpath: "//*[contains(@text, 'access photos')]"
+    button_xpath: "//*[contains(@resource-id, 'permission_allow_button')]"
+  - name: "allow_camera_access"
+    text_xpath: "//*[contains(@text, 'take photos')]"
+    button_xpath: "//*[contains(@resource-id, 'permission_allow_button')]"
+  - name: "allow_microphone_access"
+    text_xpath: "//*[contains(@text, 'record audio')]"
+    button_xpath: "//*[contains(@resource-id, 'permission_allow_button')]"
+  - name: "others_can_download_popup"
+    text_xpath: "Others can now download"
+    button_xpath: "Continue"
+  - name: "new_ways_to_reuse_popup"
+    text_xpath: "//*[contains(@text, 'New ways to reuse')]"
+    button_xpath: "//*[contains(@content-desc, 'OK') or @text='OK']"
+  - name: "account_restriction_popup"
+    text_xpath: "//*[contains(@content-desc, 'We added a restriction to your account')]"
+    button_xpath: "//*[contains(@content-desc, 'Cancel')]"
+  - name: "firefox_color_popup" # Example non-IG
+    text_xpath: "//*[contains(@text, 'Try a splash')]"
+    button_xpath: "//*[contains(@content-desc, 'Close tab')]"
+
+  # --- Popups previously hardcoded in popup_handler.py ---
+  - name: "photo_removed_popup"
+    text_xpath: "^We removed your photo"
+    button_xpath: null # Handled by callback
+    callback: "photo_removed_callback" # Name of the global function
+  - name: "translation_popup"
+    text_xpath: "//*[contains(@text, 'Try private translations')]"
+    button_xpath: "//*[contains(@text, 'Not now')]"
+  - name: "save_login_info_prompt" # Simple text trigger
+    text_xpath: "Save your login info?"
+    button_xpath: "Save" # Assumes "Save" is the desired action button text/desc
+  - name: "setup_prompt" # Example for chained conditions (handle carefully in config)
+    text_xpath: "Skip" # Use the final button as the trigger/action? Or handle via more complex logic?
+    button_xpath: "Skip" # This watcher might need custom logic if multiple texts need checking
+  - name: "firefox_save_password"
+    text_xpath: '//*[@resource-id="org.mozilla.firefox:id/mozac_feature_applinks_title"]' # Example trigger
+    button_xpath: '//*[@resource-id="org.mozilla.firefox:id/save_cancel"]'
+  - name: "trusted_device_prompt"
+    text_xpath: "^Do you want to add this device to trusted ones?"
+    button_xpath: "Skip"
+  - name: "firefox_trackers_dismiss"
+    text_xpath: "^cfr.dismiss"
+    button_xpath: "^cfr.dismiss" # Click the element itself
+  - name: "location_services_continue" # System dialog
+    text_xpath: 'Allow .* to access this device’s location?' # Example text trigger
+    button_xpath: '//*[@content-desc="Continue" or @text="Continue" or contains(@resource-id, "permission_allow_button")]' # More robust button search
+  - name: "open_location_settings_prompt"
+    text_xpath: "^Open your location settings to allow"
+    button_xpath: "Cancel"
+  - name: "reels_create_prompt"
+    text_xpath: "Create longer Reels"
+    button_xpath: "OK"
+  - name: "create_sticker_popup"
+    text_xpath: "Create a sticker"
+    button_xpath: "Not now"
+  - name: "edit_reel_draft_popup"
+    text_xpath: "//*[contains(@text, 'Keep editing your draft?') or contains(@text, 'Continue editing your draft?')]"
+    button_xpath: "//*[contains(@text, 'Start new video')]"
+  - name: "reels_about_nux"
+    text_xpath: "//*[contains(@resource-id, 'clips_nux_sheet_title') and @text='About Reels']"
+    button_xpath: "//*[contains(@resource-id, 'clips_nux_sheet_share_button') and @content-desc='Share']"
+  - name: "generic_error_toast" # Uses callback
+    text_xpath: "//*[contains(@text, 'Something went wrong')]" # This might need adjustment for toasts
+    button_xpath: null
+    callback: "handle_generic_error_toast" # Name of the PopupHandler method
+  - name: "account_suspended_popup" # Uses callback
+    text_xpath: "^We suspended your account"
+    button_xpath: null
+    callback: "handle_suspension" # Name of the PopupHandler method
+
+# --- Other Potential Configurations ---
+paths:
+  temp_media_dir: "temp_media" # Relative to project root, used by post_reel
+  # Add other paths if needed
+
+# --- Airtable Configuration (Alternative to pure .env) ---
+# Decide if base/table IDs are better here or in .env
+# airtable:
+#   bases:
+#     alexis: appXXXXXX # Example ID
+#     maddison: appYYYYYY
+#     ig_army: appZZZZZZ
+#   tables:
+#     alexis_content: tblXXXXXX
+#     maddison_content: tblYYYYYY
+#     ig_army_warmup: tblZZZZZZ
+#   views:
+#     unposted: "Unposted"
+#     warmup: "Warmup"
+
+

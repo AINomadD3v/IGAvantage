@@ -1,419 +1,739 @@
-import json
-import threading
-import os
-import time
-from .logger_config import setup_logger
-import uiautomator2 as u2
-from .ui_helper import UIHelper
+# Shared/popup_handler.py
 
-logger = setup_logger(name='PopupHander')
+import json
+import os
+import threading
+import time
+from typing import Optional  # Added for type hinting
+
+# Imports needed for the merged OCR methods
+import cv2
+import pytesseract
+import uiautomator2 as u2
+from PIL import Image
+
+from .config_loader import get_popup_config
+from .logger_config import setup_logger
+
+# Removed: from .ui_helper import UIHelper
+
+logger = setup_logger(
+    name="PopupHandler"
+)  # Changed logger name slightly for consistency
+
 
 class PopupHandler:
-    def __init__(self, driver, helper=None, config_path=None):
+    """
+    Handles detection and dismissal of various popups using uiautomator2 watchers.
+    Also includes OCR capabilities for specific popup types (e.g., cookies).
+    """
+
+    def __init__(self, driver: u2.Device, config_path: Optional[str] = None):
+        """
+        Initializes the PopupHandler.
+
+        Args:
+            driver (u2.Device): The uiautomator2 device instance.
+            config_path (Optional[str]): Path to the popup configuration JSON file.
+                                         Defaults to 'popup_config.json' in the same directory.
+        """
         self.d = driver
-        self.helper = helper or UIHelper(driver)
-        self.logger = setup_logger("PopupHandler")
+        # Removed: self.helper = helper or UIHelper(driver)
+        self.logger = setup_logger(self.__class__.__name__)  # Use class name for logger
+
+        # --- Context attributes for specific watcher callbacks (like handle_suspension) ---
+        # These need to be set externally before the watcher might trigger the callback
+        self.airtable_client = None
+        self.record_id = None
+        self.package_name = None
+        self.base_id = None
+        self.table_id = None
+        self._suspension_handled = False  # Flag to prevent multiple handling runs
+
+        # Load the config for popups/watchers from the config file.
+        self.config = get_popup_config()
+        # --- End context attributes ---
+
         if config_path is None:
             config_path = os.path.join(os.path.dirname(__file__), "popup_config.json")
         self.config = self._load_config(config_path)
 
+    def set_context(
+        self,
+        airtable_client=None,
+        record_id=None,
+        package_name=None,
+        base_id=None,
+        table_id=None,
+    ):
+        """Sets context needed for certain watcher callbacks (e.g., Airtable updates)."""
+        self.logger.debug(
+            f"Setting PopupHandler context: record_id={record_id}, package={package_name}"
+        )
+        self.airtable_client = airtable_client
+        self.record_id = record_id
+        self.package_name = package_name
+        self.base_id = base_id  # Needed if airtable_client needs re-scoping
+        self.table_id = table_id  # Needed if airtable_client needs re-scoping
+        self._suspension_handled = False  # Reset flag when context is set
+
     def _load_config(self, path):
+        """Loads popup configuration from a JSON file."""
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Popup config file not found: {path}")
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            self.logger.error(f"Popup config file not found: {path}")
+            # Return empty list or dict instead of raising error? Allows partial functionality.
+            return []
+            # raise FileNotFoundError(f"Popup config file not found: {path}")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Error decoding JSON from {path}: {e}")
+            return []
+        except Exception as e:
+            self.logger.error(f"Error loading config file {path}: {e}")
+            return []
+
+    # --- OCR Methods (Merged from UIHelper) ---
+
+    def perform_ocr(self, lang: str = "pol") -> str:
+        """
+        Captures the current screen and performs OCR using pytesseract.
+
+        Args:
+            lang (str): The language code for Tesseract OCR (e.g., 'eng', 'pol').
+
+        Returns:
+            str: The detected text in lowercase, or an empty string on failure.
+        """
+        try:
+            self.logger.info(f"Capturing screen for OCR (lang={lang})...")
+            # Ensure screenshot format is compatible with cv2
+            screenshot = self.d.screenshot(format="opencv")
+            if screenshot is None:
+                self.logger.error("Failed to get screenshot from device.")
+                return ""
+            # Convert color format for PIL
+            img_pil = Image.fromarray(cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB))
+            # Perform OCR
+            text = pytesseract.image_to_string(img_pil, lang=lang)
+            self.logger.debug(f"OCR detected text: {text}")
+            return text.lower()  # Return lowercase for easier matching
+        except pytesseract.TesseractNotFoundError:
+            self.logger.error("Tesseract OCR engine not found or not in PATH.")
+            return ""
+        except Exception as e:
+            self.logger.error(f"OCR failed: {e}", exc_info=True)
+            return ""
+
+    def find_text_center(
+        self, text_to_find: str, lang: str = "eng"
+    ) -> Optional[Tuple[int, int]]:
+        """
+        Finds the approximate center coordinates of a given text string on the screen using OCR.
+
+        Args:
+            text_to_find (str): The text string to locate.
+            lang (str): The language code for Tesseract OCR.
+
+        Returns:
+            Optional[Tuple[int, int]]: (x, y) coordinates of the text center, or None if not found.
+        """
+        try:
+            self.logger.info(
+                f"Attempting to find text center for: '{text_to_find}' using OCR (lang={lang})"
+            )
+            screenshot = self.d.screenshot(format="opencv")
+            if screenshot is None:
+                self.logger.error("Failed to get screenshot for find_text_center.")
+                return None
+            img_pil = Image.fromarray(cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB))
+            # Get detailed OCR data including bounding boxes
+            data = pytesseract.image_to_data(
+                img_pil, output_type=pytesseract.Output.DICT, lang=lang
+            )
+
+            text_to_find_lower = text_to_find.lower().strip()
+            if not text_to_find_lower:
+                return None
+
+            n_boxes = len(data["level"])
+            found_coords = []
+
+            # Iterate through detected words to find matches
+            for i in range(n_boxes):
+                word_text = data["text"][i].strip().lower()
+                # Simple check first
+                if text_to_find_lower == word_text:
+                    # Found exact word match
+                    x = data["left"][i]
+                    y = data["top"][i]
+                    w = data["width"][i]
+                    h = data["height"][i]
+                    center = (x + w // 2, y + h // 2)
+                    self.logger.info(
+                        f"Found exact OCR match for '{text_to_find}' at {center}"
+                    )
+                    return center
+                # TODO: Add multi-word phrase matching if needed (more complex)
+
+            # If exact match not found (or multi-word needed), implement phrase search
+            # (Keeping original phrase logic commented out for now, needs refinement)
+            # candidates = []
+            # for i in range(len(data['text']) - 1):
+            #     phrase = ""
+            #     coords_indices = []
+            #     # ... (original phrase building logic) ...
+            #     if text_to_find_lower in phrase.strip():
+            #         # ... (calculate center from phrase bounds) ...
+            #         return center
+
+            self.logger.warning(f"No exact OCR match found for '{text_to_find_lower}'.")
+            return None
+
+        except pytesseract.TesseractNotFoundError:
+            self.logger.error("Tesseract OCR engine not found or not in PATH.")
+            return None
+        except Exception as e:
+            self.logger.error(
+                f"OCR failed while finding text center: {e}", exc_info=True
+            )
+            return None
+
+    # --- Watcher Registration and Management ---
+    # Inside the PopupHandler class in Shared/popup_handler.py
 
     def register_watchers(self):
-        """Register background popup watchers."""
+        """
+        Register background popup watchers based SOLELY on the loaded configuration.
+        The configuration should be a list of dictionaries, each defining a watcher.
+        """
+        self.logger.info("Registering popup watchers from configuration...")
         w = self.d.watcher
+        w.reset()  # Clear any existing watchers first
 
+        if not isinstance(self.config, list):
+            self.logger.error("Popup config is not a list. Cannot register watchers.")
+            return
 
+        registered_count = 0
+        for entry in self.config:
+            name = entry.get("name")
+            text_xpath = entry.get("text_xpath")  # Condition to trigger the watcher
+            button_xpath = entry.get("button_xpath")  # Optional: Button to click
+            callback_name = entry.get(
+                "callback"
+            )  # Optional: Method/function name to call
 
-        # Photo Removed Popup
-        w("photo_removed_popup") \
-        .when("^We removed your photo") \
-        .call(lambda d, sel: photo_removed_callback(d, sel))
+            # Basic validation
+            if not name or not text_xpath:
+                self.logger.warning(
+                    f"Skipping invalid config entry (missing name or text_xpath): {entry}"
+                )
+                continue
 
-        # 🔁 Translation popup
-        w("translation_popup") \
-            .when("//*[contains(@text, 'Try private translations')]") \
-            .when("//*[contains(@text, 'Not now')]") \
-            .click()
+            # Action validation: Must have either a button or a callback
+            if not button_xpath and not callback_name:
+                self.logger.warning(
+                    f"Watcher '{name}' has neither 'button_xpath' nor 'callback' defined. Skipping action."
+                )
+                continue
+            if button_xpath and callback_name:
+                self.logger.warning(
+                    f"Watcher '{name}' has both 'button_xpath' and 'callback' defined. Prioritizing callback."
+                )
+                button_xpath = None  # Prioritize callback if both are present
 
-        # 💾 Save login info prompt (Instagram)
-        w("save_login_info") \
-            .when("save your login info") \
-            .when() \
-            .click()
+            try:
+                # Start defining the watcher with its trigger condition
+                watcher_instance = w(name).when(text_xpath)
 
-        # 📍 Setup prompts and location access (Instagram)
-        w("setup_prompt") \
-            .when("use location services") \
-            .when("access your location") \
-            .when("set up on new device") \
-            .when("continue setup") \
-            .when("Not now") \
-            .when("Skip") \
-            .click()
+                # Add the action (callback or click)
+                if callback_name:
+                    # Try to find the callback method on this instance first
+                    callback_method = getattr(self, callback_name, None)
+                    if callable(callback_method):
+                        self.logger.debug(
+                            f"Registering watcher '{name}': WHEN '{text_xpath}' CALL self.'{callback_name}'"
+                        )
+                        watcher_instance.call(callback_method)
+                        registered_count += 1
+                    else:
+                        # If not on instance, check if it's a globally defined function
+                        # Note: This requires the callback function (like photo_removed_callback)
+                        # to be imported or defined in the scope where PopupHandler is used.
+                        # It's generally safer to make callbacks instance methods if they need 'self'.
+                        global_callback = globals().get(callback_name)
+                        if callable(global_callback):
+                            self.logger.debug(
+                                f"Registering watcher '{name}': WHEN '{text_xpath}' CALL global '{callback_name}'"
+                            )
+                            # Need to handle potential arguments d, sel passed by watcher
+                            watcher_instance.call(
+                                lambda d, sel: global_callback(d, sel)
+                            )
+                            registered_count += 1
+                        else:
+                            self.logger.error(
+                                f"Callback '{callback_name}' not found for watcher '{name}'. Watcher action skipped."
+                            )
 
-        # 💾 Save password (Firefox)
-        w("save_password") \
-            .when('//*[@resource-id="org.mozilla.firefoy:id/save_cancel"]') \
-            .click()
+                elif button_xpath:
+                    self.logger.debug(
+                        f"Registering watcher '{name}': WHEN '{text_xpath}' CLICK '{button_xpath}'"
+                    )
+                    watcher_instance.click(button_xpath)
+                    registered_count += 1
 
-        # 🔐 Trusted device prompt
-        w("trusted_prompt") \
-            .when("^Do you want to add this device to trusted ones?") \
-            .when("Skip") \
-            .click()
+            except Exception as e:
+                self.logger.error(
+                    f"Error registering watcher '{name}': {e}", exc_info=True
+                )
 
-        # 🛡️ Trackers dismiss (Firefox)
-        w("trackers") \
-            .when("^cfr.dismiss") \
-            .click()
+        self.logger.info(
+            f"✅ {registered_count} popup watchers registered from configuration."
+        )
+        # Note: Watchers are registered but not started here. Use start_watcher_loop() or d.watcher.start() externally.
 
-        # Location access popup
-        w("location_services") \
-            .when('//*[@content-desc="Continue"]') \
-            .click()
+    def start_watcher_loop(self, interval: float = 0.5):
+        """
+        Continuously run watcher checks in a background thread.
+        NOTE: Ensure device.watcher.stop() is called to terminate this thread.
+        """
+        # Check if loop is already running
+        if (
+            hasattr(self, "_watcher_thread")
+            and self._watcher_thread is not None
+            and self._watcher_thread.is_alive()
+        ):
+            self.logger.info("Watcher loop already running.")
+            return
 
-        # 📍 Open location settings prompt
-        w("open_location_settings") \
-            .when("^Open your location settings to allow") \
-            .when("Cancel") \
-            .click()
+        self._watcher_stop_event = threading.Event()  # Event to signal loop termination
 
-        # 🎬 Reels creation prompt
-        w("reels_create_prompt") \
-            .when("Create longer Reels") \
-            .when("OK") \
-            .click()
-
-        # Create a sticker popup
-        w("create_sticker_popup") \
-            .when("Create a sticker") \
-            .when("Not now") \
-            .click()
-
-        # Edit your reels draft popup
-        w("edit_reel_draft") \
-            .when("//*[contains(@text, 'Keep editing your draft?') or contains(@text, 'Continue editing your draft?')]") \
-            .when("//*[contains(@text, 'Start new video')]") \
-            .click()
-
-        w("reels_about_popup") \
-            .when("//*[contains(@resource-id, 'clips_nux_sheet_title') and @text='About Reels']") \
-            .when("//*[contains(@resource-id, 'clips_nux_sheet_share_button') and @content-desc='Share']") \
-            .click()
-
-
-        # 🎵 Trending audio tab (click parent of "Trending" when detected)
-        w("reels_trending_tab") \
-            .when("Trending") \
-            .call(lambda el: el.parent().click())
-
-        # Others can download your reels Popup
-        w("others_can_download") \
-            .when("Others can now download") \
-            .when("Continue") \
-            .click()
-
-        # Allow Media Access
-        w("allow_media_access") \
-            .when("//*[contains(@text, 'access photos')]") \
-            .when("//*[contains(@resource-id, 'permission_allow_button')]") \
-            .click()
-
-        # Allow camera access
-        w("allow_camera_access") \
-            .when("//*[contains(@text, 'take photos')]") \
-            .when("//*[contains(@resource-id, 'permission_allow_button')]") \
-            .click()
-
-        # Allow microphone access
-        w("allow_microphone_access") \
-            .when("//*[contains(@text, 'record audio')]") \
-            .when("//*[contains(@resource-id, 'permission_allow_button')]") \
-            .click()
-
-        # ❌ Generic error toast: "Something went wrong"
-        w("reel_share_failure_toast") \
-            .when("//*[contains(@text, 'Something went wrong')]") \
-            .call(lambda el: logger.warning("⚠️ Toast detected: Something went wrong"))
-
-        # New ways to reuse popup
-        w("new_ways_to_reuse") \
-            .when("//*[contains(@text, 'New ways to reuse')]") \
-            .when("//*[contains(@content-desc, 'OK')]") \
-            .click()
-
-        # .call(lambda d, el: self.logger.warning("✅ WATCHER triggered: New ways to reuse") or el.click())
-        w("account_restriction") \
-            .when("//*[contains(@content-desc, 'We added a restriction to your account')]") \
-            .when("//*[contains(@content-desc, 'Cancel')]") \
-            .click()
-
-        w("account_suspended") \
-            .when("^We suspended your account") \
-            .call(self.handle_suspension)
-
-        w("firefox_color_popup") \
-            .when("//*[contains(@text, 'Try a splash')]") \
-            .when("//*[contains(@content-desc, 'Close tab')]") \
-            .click()
-
-        w.start()
-        self.logger.info("✅ Popup watchers registered and started.")
-
-    def start_watcher_loop(self, interval=0.5):
-        """Continuously run watcher to handle popups in background."""
         def loop():
-            self.logger.info("📡 Watcher loop started")
-            while True:
+            self.logger.info("📡 Watcher loop thread started.")
+            while not self._watcher_stop_event.is_set():
                 try:
+                    # Run registered watchers
                     self.d.watcher.run()
                 except Exception as e:
-                    self.logger.error(f"💥 Watcher run error: {e}")
-                time.sleep(interval)
+                    # Catch errors during watcher run (e.g., device disconnected)
+                    self.logger.error(f"💥 Watcher run error: {e}", exc_info=False)
+                    # Optional: Stop the loop on certain errors?
+                    # self._watcher_stop_event.set()
+                # Wait before next check, respecting the stop event
+                self._watcher_stop_event.wait(timeout=interval)
+            self.logger.info("📡 Watcher loop thread stopped.")
 
-        thread = threading.Thread(target=loop, daemon=True)
-        thread.start()
+        # Start the loop in a daemon thread
+        self._watcher_thread = threading.Thread(target=loop, daemon=True)
+        self._watcher_thread.start()
+
+    def stop_watcher_loop(self):
+        """Signals the background watcher loop thread to stop."""
+        if hasattr(self, "_watcher_stop_event"):
+            self.logger.info("🛑 Signaling watcher loop to stop...")
+            self._watcher_stop_event.set()
+            # Optional: Wait for thread to finish
+            if hasattr(self, "_watcher_thread") and self._watcher_thread is not None:
+                self._watcher_thread.join(timeout=2.0)  # Wait briefly
+                if self._watcher_thread.is_alive():
+                    self.logger.warning("Watcher loop thread did not stop cleanly.")
+                self._watcher_thread = None  # Clear reference
+        else:
+            self.logger.info("Watcher loop was not running or already stopped.")
+        # Also stop the underlying uiautomator2 watcher service
+        try:
+            self.d.watcher.stop()
+            self.d.watcher.remove()  # Remove registered watchers
+            self.logger.info("🛑 Underlying uiautomator2 watcher stopped and removed.")
+        except Exception as e:
+            self.logger.error(f"Error stopping/removing uiautomator2 watcher: {e}")
+
+    # --- Manual Popup Handling ---
 
     def handle_cookie_popup(self) -> bool:
+        """Attempts to detect and dismiss cookie popups using OCR and fallback clicks."""
         try:
             self.logger.info("📋 Running OCR-based cookie popup handler")
 
+            # Keywords to detect cookie popups
             keywords = [
-                "przejdź do serwisu", "zaakceptuj wszystko", "wyrażam zgodę", "akceptuję",
-                "akceptuję i przechodzę do serwisu", "zgadzam się", "cookie", "ciasteczka",
-                "polityka prywatności"
+                "przejdź do serwisu",
+                "zaakceptuj wszystko",
+                "wyrażam zgodę",
+                "akceptuję",
+                "akceptuję i przechodzę do serwisu",
+                "zgadzam się",
+                "cookie",
+                "ciasteczka",
+                "polityka prywatności",
+                "accept all",
+                "agree",
             ]
-            click_texts = ["PRZEJDŹ DO SERWISU", "Przejdź do serwisu"]
+            # Text on buttons to click (case-insensitive check later)
+            click_texts = [
+                "PRZEJDŹ DO SERWISU",
+                "Przejdź do serwisu",
+                "Accept All",
+                "Agree",
+                "Zaakceptuj wszystko",
+            ]
 
-            webview = self.d(className="android.webkit.WebView")
-            bounds = webview.info.get('bounds', {}) if webview.exists else {}
+            # Perform OCR on the current screen
+            screen_text = self.perform_ocr(
+                lang="pol+eng"
+            )  # Use combined languages if needed
+            if not screen_text:
+                self.logger.warning(
+                    "OCR returned no text, cannot check for cookie popup."
+                )
+                return False  # Cannot determine if popup exists
 
-            fallback_coords = []
-            if bounds:
-                fallback_coords = [
-                    (bounds['left'] + 150, bounds['bottom'] - 100),
-                    ((bounds['left'] + bounds['right']) // 2, bounds['bottom'] - 100),
-                    (bounds['right'] - 150, bounds['bottom'] - 100),
-                    ((bounds['left'] + bounds['right']) // 2, bounds['bottom'] - 150),
-                    ((bounds['left'] + bounds['right']) // 2, bounds['bottom'] - 50),
-                ]
-
-            screen_text = self.helper.perform_ocr()
+            # Check if any keywords are present
             if not any(keyword in screen_text for keyword in keywords):
-                self.logger.info("✅ No cookie popup detected via OCR")
-                return False
+                self.logger.info("✅ No cookie popup keywords detected via OCR.")
+                return False  # Indicate no popup was handled
 
-            self.logger.info("⚠️ Cookie popup detected via OCR")
+            self.logger.info("⚠️ Cookie popup detected via OCR keywords.")
 
+            # Attempt to click known dismiss buttons by text
             for text in click_texts:
-                btn = self.d(text=text)
-                if btn.exists and btn.click_exists(timeout=3):
-                    self.logger.info(f"✅ Clicked cookie dismiss button: '{text}'")
-                    time.sleep(2)
-                    return True
+                # Use case-insensitive text search if possible with uiautomator2 selectors
+                # Example using XPath translate() for case-insensitivity:
+                btn_xpath = f"//android.widget.Button[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text.lower()}')]"
+                # Or simpler contains: btn_xpath = f"//android.widget.Button[contains(@text, '{text}')]"
+                btn = self.d.xpath(btn_xpath)
+                if btn.exists:
+                    self.logger.info(
+                        f"Found potential dismiss button with text similar to '{text}'. Clicking..."
+                    )
+                    if btn.click_exists(timeout=2):
+                        self.logger.info(f"✅ Clicked cookie dismiss button: '{text}'")
+                        time.sleep(2)  # Wait for popup to disappear
+                        return True  # Handled
 
-            for x, y in fallback_coords:
-                self.logger.info(f"⚙️ Clicking fallback coordinate ({x}, {y})")
-                self.d.click(x, y)
-                time.sleep(2)
-                return True
+            # If text buttons fail, try fallback coordinates (less reliable)
+            self.logger.warning(
+                "Failed to click known text buttons, trying fallback coordinates."
+            )
+            webview = self.d(
+                className="android.webkit.WebView"
+            )  # Check if it's a webview popup
+            bounds = (
+                webview.info.get("bounds") if webview.exists else self.d.info
+            )  # Use screen bounds if no webview
+            if bounds:
+                # Calculate potential button locations (heuristic)
+                width = bounds.get("right", self.d.info["displayWidth"]) - bounds.get(
+                    "left", 0
+                )
+                height = bounds.get(
+                    "bottom", self.d.info["displayHeight"]
+                ) - bounds.get("top", 0)
+                left = bounds.get("left", 0)
+                bottom = bounds.get("bottom", self.d.info["displayHeight"])
 
-            self.logger.warning("❌ Failed to dismiss cookie popup")
-            return False
+                fallback_coords = [
+                    (
+                        left + int(width * 0.8),
+                        bottom - int(height * 0.1),
+                    ),  # Bottom right-ish
+                    (
+                        left + int(width * 0.5),
+                        bottom - int(height * 0.1),
+                    ),  # Bottom center
+                    (
+                        left + int(width * 0.2),
+                        bottom - int(height * 0.1),
+                    ),  # Bottom left-ish
+                ]
+                for x, y in fallback_coords:
+                    self.logger.info(f"⚙️ Clicking fallback coordinate ({x}, {y})")
+                    self.d.click(x, y)
+                    time.sleep(2)  # Wait to see if it worked
+                    # Re-check OCR to see if popup disappeared
+                    screen_text_after = self.perform_ocr(lang="pol+eng")
+                    if not any(keyword in screen_text_after for keyword in keywords):
+                        self.logger.info(
+                            "✅ Cookie popup likely dismissed via fallback coordinate."
+                        )
+                        return True  # Handled
+
+            self.logger.error(
+                "❌ Failed to dismiss cookie popup using text or fallbacks."
+            )
+            return False  # Not handled
 
         except Exception as e:
-            self.logger.error(f"💥 Error in handle_cookie_popup: {e}")
+            self.logger.error(f"💥 Error in handle_cookie_popup: {e}", exc_info=True)
             return False
 
-    def handle_all_popups(self, delay_after_click=1.0) -> int:
-        handled_count = 1
+    def handle_all_popups(self, delay_after_click: float = 1.0) -> int:
+        """
+        Manually checks for and handles popups defined in the config file.
+        This is useful for explicitly clearing the screen before a critical step.
+
+        Args:
+            delay_after_click (float): Time to wait after successfully clicking a dismiss button.
+
+        Returns:
+            int: The number of popups handled in this pass.
+        """
+        handled_count = 0
+        self.logger.debug("Manually handling all configured popups...")
+        if not isinstance(self.config, list):
+            self.logger.warning(
+                "Popup config is not a list, cannot run handle_all_popups."
+            )
+            return 0
+
         for entry in self.config:
             name = entry.get("name", "Unnamed Popup")
             text_xpath = entry.get("text_xpath")
             button_xpath = entry.get("button_xpath")
-            container_xpath = entry.get("container_xpath")  # optional: add to config for stricter visibility checks
+            # container_xpath = entry.get("container_xpath") # Optional for stricter check
 
             if not text_xpath or not button_xpath:
-                self.logger.warning(f"⚠️ Skipping popup '{name}' due to missing XPaths")
+                self.logger.warning(
+                    f"⚠️ Skipping configured popup '{name}' due to missing XPaths"
+                )
                 continue
 
             try:
-                if self.d.xpath(text_xpath).exists:
-                    self.logger.info(f"📌 Detected popup: {name}")
-
+                # Check if the popup text/identifier exists
+                popup_present = self.d.xpath(text_xpath).exists
+                if popup_present:
+                    self.logger.info(f"📌 Detected popup manually: {name}")
                     dismiss_btn = self.d.xpath(button_xpath)
                     clicked = False
 
-                    if dismiss_btn.exists:
-                        clicked = dismiss_btn.click_exists(timeout=3)
-
-                        # Retry once if click failed
-                        if not clicked:
-                            self.logger.warning(f"⚠️ First click attempt failed for popup: {name}, retrying...")
-                            time.sleep(1)
-                            clicked = dismiss_btn.click_exists(timeout=3)
+                    if dismiss_btn.wait(timeout=1):  # Wait briefly for button
+                        # Try clicking multiple times if needed
+                        for attempt in range(2):
+                            if dismiss_btn.click_exists(timeout=1):
+                                clicked = True
+                                self.logger.info(
+                                    f"Clicked dismiss button for '{name}' (attempt {attempt+1})"
+                                )
+                                break  # Exit retry loop on success
+                            else:
+                                self.logger.warning(
+                                    f"Click attempt {attempt+1} failed for '{name}' button."
+                                )
+                                time.sleep(0.5)  # Wait before retry
 
                         if clicked:
-                            time.sleep(delay_after_click)
-
-                            # Check if popup still exists
-                            visible = (
-                                self.d.xpath(text_xpath).exists or
-                                (container_xpath and self.d.xpath(container_xpath).exists)
-                            )
-                            if visible:
-                                self.logger.warning(f"⚠️ Popup '{name}' still visible after click — may not be dismissed")
-                            else:
+                            time.sleep(delay_after_click)  # Wait after successful click
+                            # Verify dismissal (optional but good)
+                            if not self.d.xpath(text_xpath).exists:
                                 self.logger.info(f"✅ Dismissed popup: {name}")
                                 handled_count += 1
+                            else:
+                                self.logger.warning(
+                                    f"⚠️ Popup '{name}' still visible after clicking dismiss button."
+                                )
                         else:
-                            try:
-                                center = dismiss_btn.get().center()
-                                self.logger.warning(f"⚠️ Click failed for popup '{name}' at {center}")
-                            except Exception:
-                                self.logger.warning(f"⚠️ Click failed for popup '{name}', and couldn't get center")
+                            self.logger.error(
+                                f"❌ Failed to click dismiss button for popup: {name} ({button_xpath})"
+                            )
                     else:
-                        self.logger.debug(f"❎ Dismiss button not found for popup: {name}")
-                else:
-                    self.logger.debug(f"❎ Popup not present: {name}")
+                        self.logger.warning(
+                            f"Popup '{name}' detected, but dismiss button not found: {button_xpath}"
+                        )
+                # else:
+                #    self.logger.debug(f"Configured popup not present: {name}")
             except Exception as e:
-                self.logger.error(f"💥 Error handling popup '{name}': {e}")
+                self.logger.error(
+                    f"💥 Error handling configured popup '{name}': {e}", exc_info=True
+                )
+
+        self.logger.debug(f"Manual popup handling finished. Handled: {handled_count}")
         return handled_count
 
-    def try_dismiss_trackers_popup(self) -> bool:
+    # --- Specific Handler Callbacks (used by watchers) ---
+
+    def handle_suspension(self, selector=None):  # Match watcher call signature
+        """Callback function triggered by the 'account_suspended' watcher."""
+        # Use instance logger
+        self.logger.warning("🚫 WATCHER: Account suspended popup detected!")
         try:
-            xpath = "^cfr.dismiss"
-            btn = self.d.xpath(xpath)
-            if btn.exists:
+            # Prevent multiple executions if watcher triggers rapidly
+            if self._suspension_handled:
+                self.logger.info("⏭️ Suspension already handled in this context.")
+                return
+
+            # Check if necessary context (Airtable client, record ID) was set
+            if not self.record_id or not self.airtable_client:
+                self.logger.error(
+                    "❌ Cannot handle suspension: Missing record_id or Airtable client context in PopupHandler."
+                )
+                return
+
+            # Update Airtable record
+            self.logger.info(
+                f"Updating Airtable record {self.record_id} status to 'Banned'."
+            )
+            # Re-assign base/table IDs if client is shared and might change context
+            if self.base_id:
+                self.airtable_client.base_id = self.base_id
+            if self.table_id:
+                self.airtable_client.table_id = self.table_id
+            success = self.airtable_client.update_record_fields(
+                self.record_id, {"Status": "Banned"}
+            )
+            if success:
+                self.logger.info("✅ Updated Airtable: Status = 'Banned'")
+            else:
+                self.logger.error("❌ Failed to update Airtable status to 'Banned'.")
+
+            # Stop the suspended app instance
+            if self.package_name:
+                self.logger.info(f"🛑 Stopping suspended app: {self.package_name}")
                 try:
-                    center = btn.get().center()
-                    self.logger.info(f"🟣 Manually clicking trackers popup at {center}")
-                    self.d.click(*center)
-                    time.sleep(1)
-                    return True
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to get bounds or click trackers dismiss: {e}")
+                    self.d.app_stop(self.package_name)
+                    # Optional: Add ADB force-stop as fallback if needed
+                    # subprocess.run(...)
+                except Exception as stop_e:
+                    self.logger.error(
+                        f"Error stopping suspended app {self.package_name}: {stop_e}"
+                    )
             else:
-                self.logger.debug("Trackers dismiss button not found (manual)")
-        except Exception as e:
-            self.logger.error(f"Error in try_dismiss_trackers_popup: {e}")
-        return False
+                self.logger.warning(
+                    "⚠️ Cannot stop suspended app: package_name context not set."
+                )
 
-    def handle_suspension(self, selector=None, d=None, source=None):
-        try:
-            self.logger.warning("🚫 WATCHER: Account appears suspended")
-
-            if hasattr(self, "_suspension_handled") and self._suspension_handled:
-                self.logger.info("⏭️ Suspension already handled this session")
-                return
-
-            if not hasattr(self.helper, "record_id") or not hasattr(self.helper, "airtable_client"):
-                self.logger.error("❌ Missing record_id or Airtable client in PopupHandler context")
-                return
-
-            # 🚫 Airtable update
-            airtable = self.helper.airtable_client
-            airtable.base_id = self.helper.base_id
-            airtable.table_id = self.helper.table_id
-            airtable.update_record_fields(self.helper.record_id, {"Status": "Banned"})
-            self.logger.info("✅ Updated Airtable: Status = 'Banned'")
-
-            # 💀 Kill the suspended Instagram clone
-            package = getattr(self.helper, "package_name", None)
-            if package:
-                self.logger.info(f"🛑 Stopping suspended app: {package}")
-                d.app_stop(package)
-            else:
-                self.logger.warning("⚠️ No package name set — cannot stop app")
-
+            # Set flag to prevent re-handling
             self._suspension_handled = True
+            # Optionally, trigger the global failure event
+            # global failure_triggered
+            # failure_triggered.set()
 
         except Exception as e:
-            self.logger.error(f"💥 Error handling suspension watcher: {e}")
+            self.logger.error(
+                f"💥 Error in handle_suspension callback: {e}", exc_info=True
+            )
 
+
+# --- External Callback Example (Needs to be defined globally or imported) ---
 def photo_removed_callback(d, sel):
-    logger.info("photo_removed_popup watcher triggered!")
+    """Example callback for the 'photo_removed_popup' watcher."""
+    # Use the module-level logger or pass one in if needed
+    logger.info("🚫 WATCHER: 'Photo removed' popup detected!")
     try:
-        element_text = sel.text
-        element_bounds = sel.bounds
-        logger.info("Matched element - text: '%s', bounds: %s", element_text, element_bounds)
+        logger.info(f"Matched element info: {sel.info}")
     except Exception as e:
-        logger.error("Error retrieving element info: %s", e)
-    
-    # Try primary method: using advanced search shorthand to locate the Cancel button.
-    cancel_selector = d.xpath('^@Cancel')
-    if cancel_selector.exists:
-        logger.info("Found Cancel button using '^@Cancel'. Attempting click...")
-        if cancel_selector.click_exists(timeout=3):
-            logger.info("Successfully clicked Cancel button via '^@Cancel'.")
-            return
+        logger.error(f"Error retrieving element info in callback: {e}")
+
+    # Try to click "Cancel" using different strategies
+    # TODO: Refactor XPaths
+    cancel_xpath_1 = "^@Cancel"  # uiautomator2 shorthand for content-desc
+    cancel_xpath_2 = '//android.widget.Button[@content-desc="Cancel"]'
+    cancel_xpath_3 = '//android.widget.Button[@text="Cancel"]'  # Added text check
+
+    for i, xpath in enumerate([cancel_xpath_1, cancel_xpath_2, cancel_xpath_3]):
+        logger.debug(f"Trying Cancel strategy {i+1}: {xpath}")
+        cancel_button = d.xpath(xpath)
+        if cancel_button.exists:
+            if cancel_button.click_exists(timeout=2):
+                logger.info(f"✅ Clicked Cancel button using strategy {i+1}.")
+                return  # Success
+            else:
+                logger.warning(
+                    f"Found Cancel button with strategy {i+1}, but click failed."
+                )
         else:
-            logger.warning("Click using '^@Cancel' failed. Trying fallback...")
-    else:
-        logger.info("Cancel button not found with '^@Cancel', trying fallback XPath...")
+            logger.debug(f"Cancel button not found with strategy {i+1}.")
 
-    # Fallback: search by explicit content-desc.
-    fallback_selector = d.xpath('//android.widget.Button[@content-desc="Cancel"]')
-    if fallback_selector.exists:
-        logger.info("Found Cancel button using fallback XPath. Attempting click...")
-        if fallback_selector.click_exists(timeout=3):
-            logger.info("Successfully clicked Cancel button using fallback XPath.")
-        else:
-            logger.error("Fallback click attempt failed.")
-    else:
-        logger.error("No Cancel button found with fallback XPath.")
+    logger.error("❌ Failed to find or click Cancel button on 'Photo removed' popup.")
 
 
+# --- Test Harness (Example Usage) ---
 if __name__ == "__main__":
-    import uiautomator2 as u2
-    from Shared.ui_helper import UIHelper
-    from Shared.airtable_manager import AirtableClient
     import logging
-    import time
 
-    logger = logging.getLogger("TestAccountSuspendedWatcher")
-    logger.setLevel(logging.INFO)
+    # Assuming AirtableClient is importable
+    from Shared.airtable_manager import AirtableClient
+
+    # Setup logger for testing
+    test_logger = logging.getLogger("TestPopupHandler")
+    test_logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    if not test_logger.hasHandlers():  # Prevent adding multiple handlers
+        test_logger.addHandler(handler)
 
     try:
-        logger.info("🔗 Connecting to device...")
+        test_logger.info("🔗 Connecting to device...")
+        # Connect to device (replace with your device ID if needed)
         d = u2.connect()
+        test_logger.info(f"✅ Connected to device: {d.serial}")
 
-        # 🔧 Hardcoded Airtable record info
-        record_id = "reczBLvQ76R2H6BRl"
-        base_id = "appubnJsm4tcUpVhg"
-        table_id = "tblpCwgzs4lauL2ZZ"
+        # --- Test Context Setup ---
+        # Hardcoded example context (replace with actual values for real testing)
+        test_record_id = "recTESTINGID123"
+        test_base_id = "appTESTINGBASEID"  # Get from env or config
+        test_table_id = "tblTESTINGTABLEID"  # Get from env or config
+        test_package_name = "com.instagram.android"  # Example package
 
-        # Setup Airtable client and inject into helper
+        # Setup Airtable client for context
+        # Ensure API key is available in environment
         airtable_client = AirtableClient()
-        airtable_client.base_id = base_id
-        airtable_client.table_id = table_id
+        # Manually set base/table for testing if needed by handler context
+        # airtable_client.base_id = test_base_id
+        # airtable_client.table_id = test_table_id
 
-        helper = UIHelper(d)
-        helper.record_id = record_id
-        helper.base_id = base_id
-        helper.table_id = table_id
-        helper.airtable_client = airtable_client
-
-        # Initialize and register watchers
-        popup_handler = PopupHandler(d, helper)
+        # Initialize PopupHandler
+        popup_handler = PopupHandler(d)
+        # Set the context needed for handle_suspension
+        popup_handler.set_context(
+            airtable_client=airtable_client,
+            record_id=test_record_id,
+            package_name=test_package_name,
+            base_id=test_base_id,  # Pass if needed by handler
+            table_id=test_table_id,  # Pass if needed by handler
+        )
+        # Register watchers
         popup_handler.register_watchers()
 
-        logger.info("🧪 Waiting for 'We suspended your account' watcher to trigger...")
-        for _ in range(60):  # ~30 seconds
+        test_logger.info(
+            "🧪 Watchers registered. Manually trigger a popup on the device."
+        )
+        test_logger.info(
+            "🧪 (e.g., try to share something that might fail, or navigate to trigger a known popup)"
+        )
+        test_logger.info("🧪 Monitoring for 60 seconds...")
+
+        # Monitor watcher activity (doesn't use the background loop for this test)
+        start_watch_time = time.time()
+        while time.time() - start_watch_time < 60:
             d.watcher.run()
             time.sleep(0.5)
 
-        logger.info("🛑 Done watching — check logs for result.")
+        test_logger.info("🛑 Done watching — check logs for any triggered watchers.")
 
+        # Test manual handling (optional)
+        # test_logger.info("🧪 Testing manual popup handling...")
+        # handled = popup_handler.handle_all_popups()
+        # test_logger.info(f"Manual handling finished, handled {handled} popups.")
+
+        # Test OCR cookie handler (optional)
+        # test_logger.info("🧪 Testing cookie popup handler...")
+        # was_handled = popup_handler.handle_cookie_popup()
+        # test_logger.info(f"Cookie handler result: {was_handled}")
+
+        # Stop watchers explicitly
+        d.watcher.stop()
+        d.watcher.remove()
+        test_logger.info("Watchers stopped and removed.")
+
+    except ConnectionError as e:
+        test_logger.error(f"💥 Test failed - Connection Error: {e}")
+    except FileNotFoundError as e:
+        test_logger.error(f"💥 Test failed - File Not Found (check config path?): {e}")
     except Exception as e:
-        logger.error(f"💥 Test failed: {e}")
-
+        test_logger.error(f"💥 Test failed - Unhandled Exception: {e}", exc_info=True)

@@ -1,22 +1,24 @@
 # main.py
 
-import uiautomator2 as u2
 import os
 import time
+from pathlib import Path
+
+import uiautomator2 as u2
+from dotenv import load_dotenv
+
+from InterActions import scroller
 from Shared import core_ig_actions
-from Shared.ui_helper import UIHelper
-from .get_code import  Firefox2FAFlow
-from .instagram_automation import InstagramAutomation
-from Shared.stealth_typing import StealthTyper
-from Shared.logger_config import setup_logger
 from Shared.airtable_manager import AirtableClient
 from Shared.core_ig_actions import bring_app_to_foreground, launch_app_via_adb
+from Shared.logger_config import setup_logger
 from Shared.new_identity import new_identity
 from Shared.popup_handler import PopupHandler
-from InterActions import scroller
+from Shared.stealth_typing import StealthTyper
+from Shared.ui_helper import UIHelper
 
-from dotenv import load_dotenv
-from pathlib import Path
+from .get_code import Firefox2FAFlow
+from .instagram_automation import InstagramAutomation
 
 # Ensure project root .env is loaded
 env_path = Path(__file__).resolve().parents[1] / ".env"
@@ -24,6 +26,7 @@ load_dotenv(dotenv_path=env_path)
 
 
 logger = setup_logger(__name__)
+
 
 def handle_2fa(
     d,
@@ -36,17 +39,19 @@ def handle_2fa(
     record_id,
     base_id,
     table_name,
-    allow_manual_fallback=True
+    allow_manual_fallback=True,
 ):
     try:
-        logger.info("🔐 2FA screen detected. Starting Firefox automation for code retrieval")
+        logger.info(
+            "🔐 2FA screen detected. Starting Firefox automation for code retrieval"
+        )
 
         firefox = Firefox2FAFlow(
             email=email,
             password=email_password,
             record_id=record_id,
             base_id=base_id,
-            table_id=table_name
+            table_id=table_name,
         )
 
         verification_code = firefox.run()
@@ -87,7 +92,7 @@ def handle_2fa(
             d,
             package_name,
             check_xpath='//android.view.View[@content-desc="Check your email"]',
-            timeout=10
+            timeout=10,
         ):
             logger.error("❌ Failed to foreground Instagram clone")
             return "foreground_switch_failed"
@@ -96,18 +101,22 @@ def handle_2fa(
         helper = UIHelper(d)
         typer = StealthTyper(device_id=d.serial)
 
-        if not helper.wait_for_xpath('//android.view.View[@content-desc="Check your email"]', timeout=10):
+        if not helper.wait_for_xpath(
+            '//android.view.View[@content-desc="Check your email"]', timeout=10
+        ):
             logger.error("❌ 2FA screen not ready — 'Check your email' prompt missing")
             return "2fa_screen_not_ready"
 
-        input_xpath = '//android.widget.EditText'
+        input_xpath = "//android.widget.EditText"
         if not helper.wait_for_xpath(input_xpath, timeout=10):
             logger.error("❌ 2FA input field not found")
             return "2fa_input_not_found"
 
         input_field = d.xpath(input_xpath)
         for attempt in range(3):
-            logger.info(f"👆 Attempt {attempt+1}/3: Tapping input field and entering 2FA code")
+            logger.info(
+                f"👆 Attempt {attempt+1}/3: Tapping input field and entering 2FA code"
+            )
 
             if input_field.click_exists(timeout=2):
                 time.sleep(0.5)
@@ -136,8 +145,6 @@ def handle_2fa(
             logger.error("❌ Code entry failed after all attempts")
             return "2fa_code_mismatch"
 
-
-
         # Step 6: Wait for Save Login screen
         save_prompt_xpath = '//android.view.View[@content-desc="Save your login info?"]'
         logger.info(f"🕒 Waiting for Save Login screen: {save_prompt_xpath}")
@@ -152,12 +159,13 @@ def handle_2fa(
             airtable_client=airtable_client,
             record_id=record_id,
             base_id=base_id,
-            table_name=table_name
+            table_name=table_name,
         ).handle()
 
     except Exception as e:
         logger.error("💥 Exception during 2FA flow: %s", e)
         return "exception"
+
 
 class Post2FAHandler:
     def __init__(self, d, username, airtable_client, record_id, base_id, table_name):
@@ -170,7 +178,6 @@ class Post2FAHandler:
         self.helper = UIHelper(d)
         self.logger = setup_logger()
 
-
     def handle(self):
         self._handle_save_login_prompt()
         self._handle_setup_prompt()
@@ -178,7 +185,9 @@ class Post2FAHandler:
 
     def _handle_save_login_prompt(self):
         try:
-            save_prompt_xpath = '//android.view.View[@content-desc="Save your login info?"]'
+            save_prompt_xpath = (
+                '//android.view.View[@content-desc="Save your login info?"]'
+            )
             self.logger.info("Waiting for save login info prompt to appear...")
             self.helper.wait_for_xpath(save_prompt_xpath, timeout=15)
 
@@ -199,15 +208,17 @@ class Post2FAHandler:
                         time.sleep(2)
                         return
                     else:
-                        self.logger.warning(f"⚠️ Button found but click failed: {button_text}")
+                        self.logger.warning(
+                            f"⚠️ Button found but click failed: {button_text}"
+                        )
             self.logger.warning("⚠️ Prompt appeared but no matching button was clicked")
 
         except Exception as e:
             self.logger.error(f"Error handling save login prompt: {e}")
 
     def _handle_setup_prompt(self):
-        setup_xpath = '%Set up on new device%'
-        skip_xpath = '^Skip'
+        setup_xpath = "%Set up on new device%"
+        skip_xpath = "^Skip"
         self.logger.info("Checking for optional 'Set up on new device' screen...")
 
         if self.d.xpath(setup_xpath).wait(timeout=30):
@@ -228,7 +239,7 @@ class Post2FAHandler:
             f'//android.widget.Button[contains(@content-desc, "{self.username}\'s story")]',
             f'//android.widget.ImageView[contains(@content-desc, "{self.username}\'s story")]',
         ]
-        ban_xpath = '%We suspended your account%'
+        ban_xpath = "%We suspended your account%"
 
         start_time = time.time()
         timeout = 30
@@ -240,11 +251,15 @@ class Post2FAHandler:
 
             for xpath in story_xpath_variants:
                 if self.d.xpath(xpath).exists:
-                    self.logger.info(f"✅ Story element matched: {xpath} — login + 2FA successful")
+                    self.logger.info(
+                        f"✅ Story element matched: {xpath} — login + 2FA successful"
+                    )
 
                     self.airtable_client.base_id = self.base_id
                     self.airtable_client.table_id = self.table_name
-                    self.airtable_client.update_record_fields(self.record_id, {"Logged In?": True})
+                    self.airtable_client.update_record_fields(
+                        self.record_id, {"Logged In?": True}
+                    )
 
                     return True
 
@@ -252,7 +267,6 @@ class Post2FAHandler:
 
         self.logger.warning("❓ No story or ban element detected after timeout")
         return "unknown"
-
 
 
 if __name__ == "__main__":
@@ -269,16 +283,16 @@ if __name__ == "__main__":
         if not all([base_id, table_id, view_id]):
             raise Exception("❌ Missing required IG Army env variables")
 
-        logger.info(f"📄 Using IG Army base_id={base_id}, table_id={table_id}, view_id={view_id}")
+        logger.info(
+            f"📄 Using IG Army base_id={base_id}, table_id={table_id}, view_id={view_id}"
+        )
 
         airtable_client = AirtableClient()
         airtable_client.base_id = base_id
         airtable_client.table_id = table_id
 
         account_data = airtable_client.get_single_active_account(
-            base_id=base_id,
-            table_id=table_id,
-            view_id=view_id
+            base_id=base_id, table_id=table_id, view_id=view_id
         )
 
         if not account_data:
@@ -319,7 +333,7 @@ if __name__ == "__main__":
             d,
             package_name=package_name,
             airtable_client=airtable_client,
-            record_id=record_id
+            record_id=record_id,
         )
         login_result = automation.ig_login(username, password)
 
@@ -327,7 +341,11 @@ if __name__ == "__main__":
             logger.info("✅ Logged in successfully without 2FA")
             result = "login_success"
             logger.info("🚀 Starting warmup session after login")
-            scroller.run_warmup_session(device_id=device_id, package_name=package_name, session_duration_secs=120)
+            scroller.run_warmup_session(
+                device_id=device_id,
+                package_name=package_name,
+                session_duration_secs=120,
+            )
 
         elif login_result == "2fa_required":
             logger.info("🔐 2FA required — proceeding with verification")
@@ -342,12 +360,16 @@ if __name__ == "__main__":
                 record_id=record_id,
                 base_id=base_id,
                 table_name=table_id,
-                allow_manual_fallback=True
+                allow_manual_fallback=True,
             )
 
             if result is True:
                 logger.info("✅ 2FA + post-login flow succeeded — starting warmup")
-                scroller.run_warmup_session(device_id=device_id, package_name=package_name, max_runtime_seconds=120)
+                scroller.run_warmup_session(
+                    device_id=device_id,
+                    package_name=package_name,
+                    max_runtime_seconds=120,
+                )
 
         elif login_result == "login_failed":
             logger.error("❌ Login failed due to incorrect credentials")
@@ -364,4 +386,3 @@ if __name__ == "__main__":
 
     except Exception as e:
         logger.error(f"❌ Process failed with error: {e}")
-

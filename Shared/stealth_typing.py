@@ -1,7 +1,9 @@
-import subprocess
-import random
-import time
+# Shared/stealth_typing.py
 import logging
+import random
+import subprocess
+import time
+
 import uiautomator2 as u2
 
 # === CONFIG ===
@@ -9,6 +11,7 @@ TARGET_WPM = 75
 TYPING_DELAY_RANGE = (0.05, 0.1)
 
 logger = logging.getLogger("StealthTyper")
+
 
 class StealthTyper:
     def __init__(self, device_id: str = None):
@@ -24,7 +27,6 @@ class StealthTyper:
         cmd += ["shell", command]
         result = subprocess.run(cmd, capture_output=True, text=True)
         return result.stdout.strip()
-
 
     def set_adb_keyboard(self):
         logger.info("Activating ADBKeyBoard")
@@ -56,8 +58,6 @@ class StealthTyper:
                 logger.info("✅ Field already empty")
         except Exception as e:
             logger.warning(f"⚠️ Could not clear field: {e}")
-
-
 
     def type_text(self, text: str):
         text = text.strip()
@@ -115,11 +115,6 @@ class StealthTyper:
         else:
             logger.warning("⚠️ No focused field found for verification")
 
-
-
-
-
-
     def press_enter(self):
         self._adb_shell("input keyevent ENTER")
 
@@ -129,7 +124,9 @@ class StealthTyper:
 
 # === TEST HARNESS ===
 
-TEST_XPATH = '//android.widget.EditText'  # Simplified for now, use your full one if needed
+TEST_XPATH = (
+    "//android.widget.EditText"  # Simplified for now, use your full one if needed
+)
 FULL_XPATH = '//android.widget.FrameLayout[@resource-id="com.instagram.androkp:id/layout_container_main"]/android.widget.FrameLayout/android.widget.FrameLayout[2]/android.widget.FrameLayout[1]/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup[1]/android.view.ViewGroup/android.view.ViewGroup/android.widget.EditText'
 
 
