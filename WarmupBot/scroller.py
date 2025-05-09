@@ -5,7 +5,7 @@ import random
 import time
 from typing import Optional, Tuple
 
-import uiautomator2 as u2
+import uiautomator2 as u2  # Keep for type hints if needed
 
 from Shared.airtable_manager import AirtableClient  # Keep for main function logic
 
@@ -32,17 +32,27 @@ if not SCROLLER_CONFIG:
         "Scroller configuration not found in config.yaml! Using default values."
     )
     # Define fallback defaults here if necessary, or raise an error
-    SCROLLER_CONFIG = {  # Example fallback structure
-        "keywords": ["model", "fitness"],
-        "delays": {"default": [1.0, 2.0]},
-        "max_scrolls": 10,
-        "percent_reels_to_watch": 0.5,
-        "watch_time_range": [3.0, 6.0],
-        "like_probability": 0.5,
-        "comment_probability": 0.1,
-        "idle_after_actions": [5, 10],
-        "idle_duration_range": [3, 7],
-    }
+    # SCROLLER_CONFIG = {  # Example fallback structure
+    #     "keywords": ["model", "fitness"],
+    #     "delays": {
+    #         "default": [1.0, 2.0],
+    #         "after_like": [1.8, 2.3],
+    #         "between_scrolls": [2.0, 3.0],
+    #         "before_scroll": [1.5, 2.2],
+    #         "after_post_tap": [1.0, 1.5],
+    #         "after_comment": [1.2, 2.0],
+    #         "comment_scroll": [1.5, 2.5],
+    #         "back_delay": [0.8, 1.2],
+    #     },
+    #     "max_scrolls": 10,
+    #     "percent_reels_to_watch": 0.5,
+    #     "watch_time_range": [3.0, 6.0],
+    #     "like_probability": 0.5,
+    #     "comment_probability": 0.1,
+    #     "idle_after_actions": [5, 10],
+    #     "idle_duration_range": [3, 7],
+    #     "max_runtime_seconds": 180,  # Added default max runtime
+    # }
 
 # Extract keywords from the loaded config
 KEYWORDS = SCROLLER_CONFIG.get("keywords", ["model"])  # Provide a default keyword list
@@ -54,16 +64,13 @@ if not KEYWORDS:
 # --- Utility Functions ---
 def random_delay(label: str):
     """Sleeps for a random duration based on the label from SCROLLER_CONFIG."""
-    # Access delays from the loaded SCROLLER_CONFIG dictionary
     delays_config = SCROLLER_CONFIG.get("delays", {})
-    # Provide a default delay if the specific label isn't found
     lo, hi = delays_config.get(label, delays_config.get("default", [1.0, 2.0]))
-    # Ensure lo and hi are valid numbers
     try:
         lo_f = float(lo)
         hi_f = float(hi)
-        if hi_f < lo_f:  # Swap if order is wrong
-            hi_f, lo_f = lo_f, hi_f
+        if hi_f < lo_f:
+            hi_f, lo_f = lo_f, hi_f  # Swap if order is wrong
         t = random.uniform(lo_f, hi_f)
         logger.debug(f"Sleeping {t:.2f}s ({label})")
         time.sleep(t)
@@ -74,88 +81,74 @@ def random_delay(label: str):
         time.sleep(1.0)
 
 
-# --- Core Logic Functions (Refactored to use InstagramInteractions for ACTIONS, XPaths kept) ---
+# --- Core Logic Functions (Refactored to use InstagramInteractions and Centralized XPaths) ---
 
 
 def extract_search_page_reels(insta_actions: InstagramInteractions) -> list[dict]:
     """
     Extracts reel information specifically from the search/explore results page.
-    Uses insta_actions for device access but keeps original XPaths for now.
+    Uses insta_actions for device access and XPath configuration.
     """
     reels = []
     seen_this_screen = set()
-    device = insta_actions.device  # Get device object from insta_actions
+    device = insta_actions.device
+    xpath_config = insta_actions.xpath_config  # Get XPath config
 
     try:
-        # TODO: Refactor XPath to use xpath_config
-        # Find potential containers using original direct XPath calls
-        containers = (
-            device.xpath("//android.widget.FrameLayout")
-            & device.xpath(
-                "^.*layout_container$"
-            )  # Example - Check if this is still needed/correct
-        ).all()
+        # Find potential containers using XPath from config
+        containers = device.xpath(xpath_config.search_layout_container_frame).all()
+        # Optional: Further filter containers if a more specific pattern exists, e.g., by resource-id
+        # containers = [c for c in containers if re.match(xpath_config.search_layout_container_rid_pattern, c.info.get("resourceID", ""))]
         logger.info(
             f"Found {len(containers)} potential layout containers on search page"
         )
 
         for container in containers:
             try:
-                # Get container's specific XPath (less reliable, try to avoid if possible)
-                container_xpath = container.get_xpath(
-                    strip_index=True
-                )  # This can be fragile
-
                 # Skip image posts with 'photos by'
-                # TODO: Refactor XPath to use xpath_config
-                bad_btns = device.xpath(
-                    f"{container_xpath}//android.widget.Button"
-                ).all()
+                # Search relative to container
+                bad_btns = container.xpath(xpath_config.search_image_post_button).all()
                 is_image_post = False
                 for btn in bad_btns:
-                    # Accessing attrib directly - consider using insta_actions.get_element_attribute if needed elsewhere
-                    btn_rid = btn.attrib.get("resource-id") or ""
-                    btn_desc = btn.attrib.get("content-desc") or ""
-                    if (
-                        "image_button" in btn_rid  # Keep original literal
-                        and "photos by" in btn_desc.lower()  # Keep original literal
-                    ):
+                    btn_info = btn.info
+                    btn_rid = btn_info.get("resourceID", "")
+                    btn_desc = btn_info.get("contentDescription", "")
+                    # TODO: Move "image_button", "photos by" literals to config if needed
+                    if "image_button" in btn_rid and "photos by" in btn_desc.lower():
                         logger.debug(
                             "🧨 Skipping image post (found 'photos by' button)"
                         )
                         is_image_post = True
                         break
                 if is_image_post:
-                    continue  # Skip this container
+                    continue
 
-                # Look for reel ImageViews inside this container
-                # TODO: Refactor XPath to use xpath_config
-                ivs = device.xpath(f"{container_xpath}//android.widget.ImageView").all()
+                # Look for reel ImageViews inside this container (relative search)
+                ivs = container.xpath(xpath_config.search_reel_imageview).all()
                 for iv in ivs:
-                    # Accessing attrib directly
-                    desc = iv.attrib.get("content-desc", "").strip()
-                    bounds_str = iv.attrib.get(
-                        "bounds", ""
-                    ).strip()  # Keep bounds as string for now
+                    iv_info = iv.info
+                    desc = iv_info.get("contentDescription", "").strip()
+                    bounds = iv_info.get("bounds")  # Get bounds dict
+
+                    bounds_str = ""
+                    if bounds:
+                        bounds_str = f"[{bounds.get('left', 0)},{bounds.get('top', 0)}][{bounds.get('right', 0)},{bounds.get('bottom', 0)}]"
 
                     if not desc or not bounds_str:
                         continue
-                    # Keep original literal check
+                    # TODO: Move "Reel by" literal to config if needed
                     if "Reel by" not in desc:
                         continue
 
-                    # Deduplicate within-screen
-                    screen_key = desc  # Using full description as key
+                    screen_key = desc
                     if screen_key in seen_this_screen:
                         continue
                     seen_this_screen.add(screen_key)
 
-                    # Build post data
                     key = hashlib.sha1(screen_key.encode("utf-8")).hexdigest()
                     username = "unknown"
                     try:
-                        # Attempt to parse username more reliably
-                        username_part = desc.split("by", 1)[1]  # Split only once
+                        username_part = desc.split("by", 1)[1]
                         username = username_part.split("at", 1)[0].strip()
                     except IndexError:
                         logger.warning(f"Could not parse username from desc: {desc}")
@@ -165,20 +158,16 @@ def extract_search_page_reels(insta_actions: InstagramInteractions) -> list[dict
                         "short_id": key[:7],
                         "username": username,
                         "type": "REEL",
-                        "desc": desc,  # This is the key identifier for tapping later
-                        "bounds": bounds_str,  # Store original string format
+                        "desc": desc,
+                        "bounds": bounds_str,
                     }
                     logger.info(
                         f"[{post['short_id']}] ✅ Extracted Reel | @{username} | bounds={bounds_str}"
                     )
                     reels.append(post)
 
-            # except StopIteration: # This was used before, ensure logic doesn't rely on it now
-            #     continue
             except Exception as e:
-                logger.warning(
-                    f"⚠️ Failed to parse a container: {e}", exc_info=False
-                )  # Keep logs cleaner
+                logger.warning(f"⚠️ Failed to parse a container: {e}", exc_info=False)
                 continue
 
     except Exception as outer_e:
@@ -197,6 +186,7 @@ def process_reel(
     """
     Processes a single reel: watches, interacts (like/comment), extracts data.
     Uses methods from the insta_actions instance and configuration from SCROLLER_CONFIG.
+    Uses XPaths from insta_actions.xpath_config.
 
     Args:
         insta_actions: The initialized InstagramInteractions instance.
@@ -231,59 +221,54 @@ def process_reel(
     next_interaction_time = interaction_times.pop(0) if interaction_times else None
 
     # --- Tap the reel to open it ---
-    # TODO: Refactor XPath to use xpath_config template
-    reel_tap_xpath = f'//android.widget.ImageView[@content-desc="{reel_post["desc"]}"]'
+    # Use the XPath template from config
+    reel_tap_xpath = insta_actions.xpath_config.search_reel_imageview_template.format(
+        reel_post["desc"]
+    )
     if not insta_actions.click_by_xpath(reel_tap_xpath, timeout=5):
         logger.error(
             f"❌ Failed to tap/open reel [{reel_post.get('short_id', 'N/A')}] using XPath: {reel_tap_xpath}"
         )
         return None
 
-    random_delay("after_post_tap")  # Uses delay from SCROLLER_CONFIG
+    random_delay("after_post_tap")
 
     # --- Extract reel metadata ---
-    # TODO: Refactor XPaths to use xpath_config
-    username_element_xpath = (
-        '//android.widget.ImageView[contains(@content-desc, "Profile picture of")]'
-    )
+    # Use XPaths from config
     username = insta_actions.get_element_attribute(
-        username_element_xpath, "contentDescription", timeout=2
+        insta_actions.xpath_config.reel_profile_picture_desc_contains,
+        "contentDescription",
+        timeout=2,
     )
     if username and "Profile picture of" in username:
         username = username.replace("Profile picture of", "").strip()
 
-    # TODO: Refactor XPath to use xpath_config (ensure package name is correct or use placeholder)
-    package_name = insta_actions.app_package  # Get package name from insta_actions
-    caption_element_xpath = f'//android.view.ViewGroup[@resource-id="{package_name}:id/clips_caption_component"]//android.view.ViewGroup[contains(@content-desc, "")]'
-    caption = insta_actions.get_element_text(caption_element_xpath, timeout=2)
-
-    # TODO: Refactor XPath to use xpath_config
-    likes_element_xpath = (
-        '//android.view.ViewGroup[contains(@content-desc, "View likes")]'
+    caption = insta_actions.get_element_text(
+        insta_actions.xpath_config.reel_caption_container,  # Use the defined property
+        timeout=2,
     )
+
     likes = insta_actions.get_element_attribute(
-        likes_element_xpath, "contentDescription", timeout=2
+        insta_actions.xpath_config.reel_likes_button_desc,
+        "contentDescription",
+        timeout=2,
     )
 
-    # TODO: Refactor XPath to use xpath_config
-    reshares_element_xpath = (
-        '//android.view.ViewGroup[contains(@content-desc, "Reshare number")]'
-    )
     reshares = insta_actions.get_element_attribute(
-        reshares_element_xpath, "contentDescription", timeout=2
+        insta_actions.xpath_config.reel_reshare_button_desc,
+        "contentDescription",
+        timeout=2,
     )
 
-    # TODO: Refactor XPath to use xpath_config
-    sound_element_xpath = (
-        '//android.view.ViewGroup[contains(@content-desc, "Original audio")]'
-    )
     sound = insta_actions.get_element_attribute(
-        sound_element_xpath, "contentDescription", timeout=2
+        insta_actions.xpath_config.reel_audio_link_desc_contains,
+        "contentDescription",
+        timeout=2,
     )
 
-    # TODO: Refactor XPath to use xpath_config
-    follow_button_xpath = '//android.widget.Button[@text="Follow"]'
-    follow_btn_exists = insta_actions.element_exists(follow_button_xpath)
+    follow_btn_exists = insta_actions.element_exists(
+        insta_actions.xpath_config.reel_follow_button_text
+    )
 
     if sound and "• Original audio" in sound:
         sound = sound.split("• Original audio")[0].strip()
@@ -306,7 +291,9 @@ def process_reel(
 
         if not liked and elapsed >= like_delay:
             if random.random() < like_probability:
-                liked = insta_actions.like_current_post_or_reel()
+                liked = (
+                    insta_actions.like_current_post_or_reel()
+                )  # This method uses config XPaths internally
                 if liked:
                     logger.info("❤️ Like successful.")
                     random_delay("after_like")
@@ -319,7 +306,9 @@ def process_reel(
                 like_delay = float("inf")
 
         if not commented and should_comment and elapsed >= full_watch_time * 0.6:
-            commented = insta_actions.simulate_open_close_comments()
+            commented = (
+                insta_actions.simulate_open_close_comments()
+            )  # This method uses config XPaths internally
             if commented:
                 random_delay("after_comment")
             should_comment = False
@@ -332,10 +321,12 @@ def process_reel(
         liked = insta_actions.like_current_post_or_reel()
 
     # --- Exit Reel View ---
-    # TODO: Refactor XPath to use xpath_config
-    like_button_xpath_for_verify = '//*[@content-desc="Like" or @content-desc="Unlike"]'
-    insta_actions.navigate_back_from_reel(
-        verify_element_disappears=like_button_xpath_for_verify
+    # Use the specific XPath from config for verification
+    like_unlike_xpath_for_verify = (
+        insta_actions.xpath_config.reel_like_or_unlike_button_desc
+    )
+    insta_actions.navigate_back_from_reel(  # Renamed from navigate_back_from_reel
+        verify_element_disappears=like_unlike_xpath_for_verify
     )
     random_delay("back_delay")
 
@@ -354,25 +345,18 @@ def process_reel(
 def perform_keyword_search(insta_actions: InstagramInteractions, keyword: str) -> bool:
     """
     Performs a keyword search on the Explore page.
-    Uses insta_actions for UI interactions and StealthTyper for input.
-    Keeps original XPaths for now.
+    Uses insta_actions for UI interactions and config XPaths. Uses StealthTyper for input.
     """
     logger.info(f"🔍 Performing keyword search: {keyword}")
-    device = insta_actions.device  # Get device for direct swipe/xpath calls below
+    xpath_config = insta_actions.xpath_config  # Get config object
 
-    # TODO: Refactor XPath to use xpath_config
-    search_xpath = f"//*[contains(@resource-id, 'action_bar_search_edit_text')]"
-    # TODO: Refactor XPath to use xpath_config (ensure package name is correct)
-    posts_xpath = f'//*[@resource-id="{CONFIG["package_name"]}:id/title_text_view" and @text="Posts"]'
-    # TODO: Refactor XPath to use xpath_config
-    results_recycler_xpath = "//*[contains(@resource-id, 'recycler_view')]"
+    # Use XPaths from config
+    search_xpath = xpath_config.explore_search_bar_rid
+    results_recycler_xpath = xpath_config.search_results_recycler_view
 
-    # Assuming StealthTyper is still needed for robust input
     typer = StealthTyper(device_id=insta_actions.device.serial)
 
     try:
-        # Step 1: Locate and tap the search bar
-        # Use insta_actions methods
         if not insta_actions.wait_for_element_appear(search_xpath, timeout=10):
             logger.error("❌ Search bar not found on Explore page.")
             return False
@@ -380,33 +364,25 @@ def perform_keyword_search(insta_actions: InstagramInteractions, keyword: str) -
             logger.error("❌ Failed to click search bar.")
             return False
         logger.info("✅ Search bar tapped.")
-        time.sleep(random.uniform(0.8, 1.2))  # Wait for keyboard potentially
+        time.sleep(random.uniform(0.8, 1.2))
 
-        # Step 2: Type the keyword using StealthTyper
-        typer.type_text(keyword)  # Keep direct StealthTyper call for now
+        typer.type_text(keyword)
         time.sleep(random.uniform(0.3, 0.6))
-        typer.press_enter()  # Assumes StealthTyper has this method
+        typer.press_enter()
         logger.info("⏎ Enter pressed to start search.")
-        time.sleep(random.uniform(2.5, 4.0))  # Wait for search results to load
+        time.sleep(random.uniform(2.5, 4.0))
 
-        # Step 3: Scroll slightly to reveal posts (use direct swipe for now)
         logger.info("↕️ Scrolling down slightly to reveal posts...")
-        # Use insta_actions method
-        insta_actions.scroll_up_humanlike()  # Scroll up = swipe down
+        insta_actions.scroll_up_humanlike()
         time.sleep(random.uniform(1.0, 1.5))
 
-        # Step 4: Wait for the "Posts" section or results recycler view
         logger.info("🧭 Looking for posts section / results...")
-        # Use insta_actions method
         if not insta_actions.wait_for_element_appear(
             results_recycler_xpath, timeout=10
-        ):  # Wait for general results container
+        ):
             logger.error(
                 "❌ Search results recycler view not found after search. Can't continue."
             )
-            # Optional: Check specifically for the "Posts" text element as well
-            # if not insta_actions.element_exists(posts_xpath):
-            #     logger.error("❌ 'Posts' text indicator also not found.")
             return False
 
         logger.info("✅ Search results loaded.")
@@ -417,27 +393,22 @@ def perform_keyword_search(insta_actions: InstagramInteractions, keyword: str) -
         return False
 
 
-def run_warmup_session(
-    insta_actions: InstagramInteractions, max_runtime_seconds: int = 180
-):
+def run_warmup_session(insta_actions: InstagramInteractions):
     """
     Runs the main warmup/scrolling session logic. Uses insta_actions instance and SCROLLER_CONFIG.
 
     Args:
         insta_actions: The initialized InstagramInteractions instance.
-        max_runtime_seconds: Maximum duration for the session.
     """
-    device = insta_actions.device
-    package_name = insta_actions.app_package
-
     # Get config values safely
+    max_runtime_seconds = SCROLLER_CONFIG.get("max_runtime_seconds", 180)
     max_scrolls = SCROLLER_CONFIG.get("max_scrolls", 50)
     percent_reels_to_watch = SCROLLER_CONFIG.get("percent_reels_to_watch", 0.7)
     idle_after_actions_range = SCROLLER_CONFIG.get("idle_after_actions", [3, 6])
     idle_duration_range = SCROLLER_CONFIG.get("idle_duration_range", [2, 6])
-    like_probability = SCROLLER_CONFIG.get(
-        "like_probability", 0.5
-    )  # Needed for process_reel call
+
+    device = insta_actions.device
+    package_name = insta_actions.app_package
 
     # --- Setup Popup Handler ---
     popup_handler = PopupHandler(device)
@@ -447,10 +418,8 @@ def run_warmup_session(
     popup_handler.start_watcher_loop()
 
     logger.info(f"📱 Ensuring Instagram app is open and ready: {package_name}")
-    # TODO: Refactor XPath to use xpath_config
-    explore_tab_xpath = (
-        '//android.widget.FrameLayout[@content-desc="Search and explore"]'
-    )
+    # Use XPath from config for readiness check
+    explore_tab_xpath = insta_actions.xpath_config.explore_tab_desc
     if not insta_actions.open_app(
         readiness_xpath=explore_tab_xpath, readiness_timeout=30
     ):
@@ -465,7 +434,9 @@ def run_warmup_session(
     all_reels_processed_info = []
 
     # --- Navigate to Explore ---
-    if not insta_actions.navigate_to_explore(timeout=15):
+    if not insta_actions.navigate_to_explore(
+        timeout=15
+    ):  # This method uses config XPaths internally now
         logger.error("🚫 Failed to navigate to Explore page. Exiting.")
         if popup_handler:
             popup_handler.stop_watcher_loop()
@@ -475,7 +446,9 @@ def run_warmup_session(
     # --- Perform Keyword Search ---
     keyword = random.choice(KEYWORDS)  # Use keywords loaded from config
     logger.info(f"🎯 Chosen keyword for search: '{keyword}'")
-    if not perform_keyword_search(insta_actions, keyword):
+    if not perform_keyword_search(
+        insta_actions, keyword
+    ):  # This method uses config XPaths internally now
         logger.error("🚫 Keyword search failed. Exiting.")
         if popup_handler:
             popup_handler.stop_watcher_loop()
@@ -485,7 +458,6 @@ def run_warmup_session(
     # --- Main Scrolling Loop ---
     start_time = time.time()
     actions_since_idle = 0
-    # Ensure range values are integers for randint
     idle_min, idle_max = map(int, idle_after_actions_range)
     next_idle_at = random.randint(idle_min, idle_max)
 
@@ -499,6 +471,7 @@ def run_warmup_session(
 
         logger.info(f"--- Scroll iteration {i + 1}/{max_scrolls} ---")
 
+        # extract_search_page_reels still uses hardcoded XPaths internally for now
         all_detected_this_screen = extract_search_page_reels(insta_actions)
         new_reels_on_screen = [
             r for r in all_detected_this_screen if r["id"] not in seen_hashes
@@ -525,11 +498,9 @@ def run_warmup_session(
             logger.info(
                 f"🎬 Processing reel [{reel_data['short_id']}] by @{reel_data['username']}"
             )
+            # process_reel now uses config XPaths internally where applicable
             processing_result = process_reel(
-                insta_actions=insta_actions,
-                reel_post=reel_data,
-                like_probability=like_probability,  # Pass loaded probability
-                stop_callback=None,
+                insta_actions=insta_actions, reel_post=reel_data, stop_callback=None
             )
             seen_hashes.add(reel_data["id"])
             if processing_result:
@@ -539,11 +510,11 @@ def run_warmup_session(
 
             actions_since_idle += 1
             if actions_since_idle >= next_idle_at:
-                idle_time = random.uniform(*idle_duration_range)  # Use loaded range
+                idle_time = random.uniform(*idle_duration_range)
                 logger.info(f"😴 Idle break for {idle_time:.2f}s")
                 time.sleep(idle_time)
                 actions_since_idle = 0
-                next_idle_at = random.randint(idle_min, idle_max)  # Use loaded range
+                next_idle_at = random.randint(idle_min, idle_max)
 
         if time.time() - start_time > max_runtime_seconds:
             logger.info("⏰ Runtime limit reached after processing reels.")
@@ -577,8 +548,9 @@ def run_warmup_session(
 
 
 def main():
+    """Main function to run the warmup session based on Airtable records."""
     # --- Configuration and Setup ---
-    client = AirtableClient(table_key="warmup_accounts")  # Keep Airtable logic
+    client = AirtableClient(table_key="warmup_accounts")
     warmup_records = client.get_pending_warmup_records()
 
     if not warmup_records:
@@ -589,7 +561,6 @@ def main():
 
     # --- Loop Through Accounts ---
     for record in warmup_records:
-        # Extract necessary info (handle potential missing keys)
         username = record.get("username", "UnknownUser")
         device_id = record.get("device_id")
         package_name = record.get("package_name")
@@ -605,52 +576,61 @@ def main():
             f"--- Running warmup for @{username} on {device_id} ({package_name}) ---"
         )
 
-        insta_actions = None  # Initialize for finally block
+        insta_actions = None
         try:
-            # --- Connect to Device and Instantiate Interactions Class ---
             logger.info(f"🔌 Connecting to device: {device_id}")
-            device = u2.connect(device_id, connect_timeout=20)  # Add timeout
-            if not device.alive:
-                raise ConnectionError(f"Failed to connect to device {device_id}")
-            logger.info(f"✅ Connected to {device.serial}")
+            device = u2.connect(device_id, connect_timeout=20)
+            try:
+                info = device.info
+                logger.info(
+                    f"✅ Connected to {device.serial} - Product: {info.get('productName', 'N/A')}"
+                )
+            except Exception as conn_err:
+                raise ConnectionError(
+                    f"Failed to connect or communicate with device {device_id}: {conn_err}"
+                )
 
-            # Instantiate the main interactions class
             insta_actions = InstagramInteractions(
                 device, package_name, airtable_manager=None
-            )  # Pass None for airtable if not needed by interactions
+            )
 
             # --- Run the Warmup Session ---
+            max_runtime = SCROLLER_CONFIG.get("max_runtime_seconds", 180)
             run_warmup_session(
-                insta_actions=insta_actions,  # Pass the instance
-                max_runtime_seconds=180,  # Example runtime
+                insta_actions=insta_actions, max_runtime_seconds=max_runtime
             )
 
             # --- Update Airtable on Success ---
-            client.update_record_fields(record_id, {"Daily Warmup Complete": True})
-            logger.info(f"✅ Warmup complete and marked for @{username}")
+            if isinstance(record_id, str):
+                client.update_record_fields(record_id, {"Daily Warmup Complete": True})
+                logger.info(f"✅ Warmup complete and marked for @{username}")
+            else:
+                logger.error(
+                    f"Cannot mark warmup complete due to invalid record_id: {record_id}"
+                )
 
         except ConnectionError as conn_err:
             logger.error(
                 f"❌ Connection Error for @{username} on {device_id}: {conn_err}"
             )
-            client.update_record_fields(
-                record_id, {"Warmup Errors": f"Connection Error: {conn_err}"}
-            )
+            if isinstance(record_id, str):
+                client.update_record_fields(
+                    record_id, {"Warmup Errors": f"Connection Error: {conn_err}"}
+                )
         except Exception as e:
             logger.error(
                 f"❌ Unhandled exception during warmup for @{username}: {e}",
                 exc_info=True,
             )
-            client.update_record_fields(
-                record_id, {"Warmup Errors": f"Runtime Error: {e}"}
-            )
+            if isinstance(record_id, str):
+                client.update_record_fields(
+                    record_id, {"Warmup Errors": f"Runtime Error: {e}"}
+                )
         finally:
-            # Ensure app is closed even if errors occurred mid-session
             if insta_actions:
                 logger.info(f"Ensuring app is closed for @{username}...")
-                insta_actions.close_app()  # Use the method
+                insta_actions.close_app()
             logger.info(f"--- Finished processing for @{username} ---")
-            # Add a delay between accounts if needed
             time.sleep(random.uniform(5, 10))
 
 

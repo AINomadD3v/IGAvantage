@@ -2,7 +2,7 @@
   description = "Development environment for your project";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05"; # or whatever you want to pin
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"; # or whatever you want to pin
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -14,7 +14,7 @@
     flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = import nixpkgs {inherit system;};
-        pythonPackages = pkgs.python3Packages;
+        pythonPackages = pkgs.python313Packages;
         addPythonPackage = name: pythonPackages.${name};
 
         pythonDepsList = [
@@ -67,7 +67,7 @@
           })
           pythonDepsList)));
 
-        customPython = pkgs.python3.withPackages (ps: pythonDeps);
+        customPython = pkgs.python313.withPackages (ps: pythonDeps);
 
         pyairtable = pythonPackages.buildPythonPackage rec {
           pname = "pyairtable";
@@ -108,7 +108,7 @@
           format = "pyproject";
           src = pythonPackages.fetchPypi {
             inherit pname version;
-            sha256 = "sha256-CQa70LCVLNrSmDIFVjRYFsfbaOAmL6s0tE0BH+h4Zgs=";
+            sha256 = "sha256-CQa70LCVLNrSmDIFVjRYFsfbaOAmL6eNinsg/ejn+DA=";
           };
           nativeBuildInputs = with pythonPackages; [poetry-core setuptools pbr];
           propagatedBuildInputs = with pythonPackages; [requests deprecation whichcraft packaging retry pillow apkutils2];

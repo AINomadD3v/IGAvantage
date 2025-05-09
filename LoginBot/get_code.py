@@ -1,14 +1,16 @@
 # get_code.py
 
-from Shared.airtable_manager import AirtableClient
 import os
 import re
-from pathlib import Path
-import uiautomator2 as u2
 import time
+from pathlib import Path
+
+import uiautomator2 as u2
+
+from Shared.airtable_manager import AirtableClient
 from Shared.logger_config import setup_logger
-from Shared.stealth_typing import StealthTyper
 from Shared.popup_handler import PopupHandler
+from Shared.stealth_typing import StealthTyper
 from Shared.ui_helper import UIHelper
 
 logger = setup_logger(__name__)
@@ -17,22 +19,28 @@ POPUP_CONFIG_PATH = Path(__file__).resolve().parents[1] / "Shared" / "popup_conf
 
 
 class FirefoxSession:
-    def __init__(self, email: str, password: str, firefox_package: str = "org.mozilla.firefoy"):
+    def __init__(
+        self, email: str, password: str, firefox_package: str = "org.mozilla.firefoy"
+    ):
         self.email = email
         self.password = password
         self.firefox_package = firefox_package
         self.d = u2.connect()
         self.logger = setup_logger(self.__class__.__name__)
         self.helper = UIHelper(self.d)
-        self.popup_handler = PopupHandler(self.d, helper=self.helper, config_path=str(POPUP_CONFIG_PATH))
+        self.popup_handler = PopupHandler(
+            self.d, helper=self.helper, config_path=str(POPUP_CONFIG_PATH)
+        )
         self.popup_handler.register_watchers()
 
     def start(self, url: str = "op.pl") -> bool:
-        return all([
-            self._launch_firefox(),
-            self._navigate_to_url(url),
-            self._perform_login_sequence()
-        ])
+        return all(
+            [
+                self._launch_firefox(),
+                self._navigate_to_url(url),
+                self._perform_login_sequence(),
+            ]
+        )
 
     def _launch_firefox(self) -> bool:
         try:
@@ -41,8 +49,10 @@ class FirefoxSession:
             time.sleep(3)
             self.popup_handler.handle_all_popups()
 
-            smart_xpath = '^Search or enter address'
-            fallback_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            smart_xpath = "^Search or enter address"
+            fallback_xpath = (
+                '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            )
 
             for _ in range(10):
                 if self.d.xpath(smart_xpath).exists:
@@ -92,13 +102,16 @@ class FirefoxSession:
             self.logger.error(f"Error navigating to URL: {e}")
             return False
 
+
 class EmailLogin:
     def __init__(self, email, password, firefox_package="org.mozilla.firefoy"):
         self.email = email
         self.password = password
         self.d = u2.connect()
         self.helper = UIHelper(self.d)
-        self.popup_handler = PopupHandler(self.d, helper=self.helper, config_path=str(POPUP_CONFIG_PATH))
+        self.popup_handler = PopupHandler(
+            self.d, helper=self.helper, config_path=str(POPUP_CONFIG_PATH)
+        )
         self.popup_handler.register_watchers()
         self.firefox_package = firefox_package
         self.logger = setup_logger(self.__class__.__name__)
@@ -153,7 +166,9 @@ class EmailLogin:
                 continue
 
             # Step 6: Click "NEXT" button
-            if not self.helper.smart_button_clicker("NEXT", fallback_xpath='//android.widget.Button[@text="NEXT"]'):
+            if not self.helper.smart_button_clicker(
+                "NEXT", fallback_xpath='//android.widget.Button[@text="NEXT"]'
+            ):
                 logger.error("❌ Failed to click NEXT")
                 return False
 
@@ -168,9 +183,6 @@ class EmailLogin:
 
         logger.error("❌ Email input failed after retries")
         return False
-
-
-
 
     def handle_password_input(self):
         logger = self.logger
@@ -195,7 +207,9 @@ class EmailLogin:
 
             # 🔁 IMMEDIATE show-password button click, BEFORE checking text
             if not self.helper.click_show_password_icon(password_xpath):
-                logger.error("❌ Could not click show-password icon — can't verify password")
+                logger.error(
+                    "❌ Could not click show-password icon — can't verify password"
+                )
                 return False
 
             visible_pw = field.get_text() or ""
@@ -203,7 +217,9 @@ class EmailLogin:
 
             if visible_pw == self.password:
                 logger.info("✅ Password match confirmed")
-                if not self.helper.smart_button_clicker("LOG IN", fallback_xpath='//android.widget.Button[@text="LOG IN"]'):
+                if not self.helper.smart_button_clicker(
+                    "LOG IN", fallback_xpath='//android.widget.Button[@text="LOG IN"]'
+                ):
                     logger.error("❌ Failed to click LOG IN")
                     return False
                 logger.info("✅ Password submitted")
@@ -223,9 +239,10 @@ class EmailLogin:
 
         logger.info("▶️ Starting post-login handling")
 
-
         logger.info("⏳ Verifying inbox UI up to 30s post-login")
-        email_nav = EmailNavigation(driver=d, helper=self.helper, popup_handler=self.popup_handler)
+        email_nav = EmailNavigation(
+            driver=d, helper=self.helper, popup_handler=self.popup_handler
+        )
 
         start = time.time()
         while time.time() - start < 30:
@@ -236,7 +253,6 @@ class EmailLogin:
 
         logger.error("❌ Login failed: final inbox not reached")
         return False
-
 
     def perform_full_login(self):
         self.logger.info("🔐 Starting full email login flow...")
@@ -249,8 +265,10 @@ class EmailLogin:
             time.sleep(3)
             self.popup_handler.handle_all_popups()
 
-            smart_xpath = '^Search or enter address'
-            fallback_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            smart_xpath = "^Search or enter address"
+            fallback_xpath = (
+                '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            )
 
             for _ in range(10):
                 if self.d.xpath(smart_xpath).exists:
@@ -267,7 +285,9 @@ class EmailLogin:
                 return False
 
             typer = StealthTyper(device_id=self.d.serial)
-            url_xpath = '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            url_xpath = (
+                '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+            )
 
             if not self.d.xpath(url_xpath).click_exists(timeout=3):
                 self.logger.error("❌ Could not click on URL input box")
@@ -297,11 +317,10 @@ class EmailNavigation:
         self.popup_handler = popup_handler
         self.logger = setup_logger(self.__class__.__name__)
 
-
     def verify_logged_in(self):
         try:
             self.logger.info("Verifying login status...")
-            main_container_xpath = '^React_MainContainer'  # Smart search by resource-id
+            main_container_xpath = "^React_MainContainer"  # Smart search by resource-id
 
             if self.d.xpath(main_container_xpath).exists:
                 self.logger.info("✅ Main container found - successfully logged in")
@@ -314,7 +333,6 @@ class EmailNavigation:
             self.logger.error(f"Error verifying login status: {e}")
             return False
 
-
     def find_code_in_main_container(self):
         """
         Attempt to extract Instagram 2FA code:
@@ -322,20 +340,29 @@ class EmailNavigation:
         - If not found, open the Instagram email and extract from full email body
         """
         try:
-            self.logger.info("🔍 Scanning React_MainContainer for Instagram 2FA email blocks...")
+            self.logger.info(
+                "🔍 Scanning React_MainContainer for Instagram 2FA email blocks..."
+            )
 
             container_xpath = '//android.view.View[@resource-id="React_MainContainer"]'
-            block_xpath = container_xpath + '//android.view.View[.//android.view.View[@text="Instagram"] and .//android.view.View[@text="Verify your account"]]'
+            block_xpath = (
+                container_xpath
+                + '//android.view.View[.//android.view.View[@text="Instagram"] and .//android.view.View[@text="Verify your account"]]'
+            )
 
             blocks = self.d.xpath(block_xpath).all()
-            self.logger.info(f"📦 Found {len(blocks)} candidate blocks inside main container")
+            self.logger.info(
+                f"📦 Found {len(blocks)} candidate blocks inside main container"
+            )
 
             for block in blocks:
                 try:
-                    children = self.d.xpath(block.get_xpath() + '/android.view.View').all()
+                    children = self.d.xpath(
+                        block.get_xpath() + "/android.view.View"
+                    ).all()
                     for child in children:
                         text = child.attrib.get("text", "") or ""
-                        match = re.search(r'\b(\d{6})\b', text)
+                        match = re.search(r"\b(\d{6})\b", text)
                         if match:
                             code = match.group(1)
                             self.logger.info(f"✅ Found 2FA code in preview: {code}")
@@ -363,7 +390,9 @@ class EmailNavigation:
                 return None
 
             email_block = self.d.xpath(email_xpath).get()
-            clickable_wrapper_xpath = email_block.get_xpath() + '/../..'  # go up to Button container
+            clickable_wrapper_xpath = (
+                email_block.get_xpath() + "/../.."
+            )  # go up to Button container
 
             if not self.d.xpath(clickable_wrapper_xpath).click_exists(timeout=3):
                 self.logger.error("❌ Failed to click Instagram email block")
@@ -392,25 +421,23 @@ class EmailNavigation:
             self.logger.error(f"💥 Error while extracting code from opened email: {e}")
             return None
 
-
-
     def open_sidebar(self):
         try:
             self.logger.info("Attempting to open sidebar...")
             sidebar_btn_xpath = '//android.widget.Button[@resource-id="sidebar-btn"]'
-            
+
             if not self.d.xpath(sidebar_btn_xpath).wait(timeout=10):
                 self.logger.warning("Sidebar button not found")
                 return False
-                
+
             # Click the sidebar button
             if not self.d.xpath(sidebar_btn_xpath).click_exists(timeout=3):
                 self.logger.error("Failed to click sidebar button")
                 return False
-                
+
             self.logger.info("Successfully clicked sidebar button")
             return True
-            
+
         except Exception as e:
             self.logger.error("Error opening sidebar: %s", e)
             return False
@@ -419,14 +446,16 @@ class EmailNavigation:
         try:
             self.logger.info("Verifying sidebar is open...")
             write_msg_xpath = '//android.widget.Button[@text="Napisz wiadomość"]'
-            
+
             if not self.d.xpath(write_msg_xpath).wait(timeout=10):
-                self.logger.error("Write message button not found - sidebar might not be open")
+                self.logger.error(
+                    "Write message button not found - sidebar might not be open"
+                )
                 return False
-                
+
             self.logger.info("Write message button found - sidebar is open")
             return True
-            
+
         except Exception as e:
             self.logger.error("Error verifying sidebar: %s", e)
             return False
@@ -434,24 +463,26 @@ class EmailNavigation:
     def navigate_to_communities(self):
         try:
             self.logger.info("Navigating to Communities section...")
-            
+
             # Using a more flexible XPath that looks for View elements containing the text
             communities_xpath = '//android.view.View[contains(@text, "Społeczności")]'
-            self.logger.info("Searching for Communities button using xpath: %s", communities_xpath)
-            
+            self.logger.info(
+                "Searching for Communities button using xpath: %s", communities_xpath
+            )
+
             # Wait for the element to be present
             if not self.d.xpath(communities_xpath).wait(timeout=10):
                 self.logger.error("Communities button not found")
                 return False
-            
+
             # Click the element
             if self.d.xpath(communities_xpath).click_exists(timeout=3):
                 self.logger.info("Successfully clicked Communities button")
                 return True
-            
+
             self.logger.error("Failed to click Communities button")
             return False
-            
+
         except Exception as e:
             self.logger.error("Error navigating to Communities: %s", e)
             return False
@@ -488,8 +519,7 @@ class EmailNavigation:
             time.sleep(2)
 
             # Step 4: Search for 2FA email in community tab
-            # Step 4: Search for 2FA email in community tab
-            smart_xpath = '^Hi '
+            smart_xpath = "^Hi "
             matches = self.d.xpath(smart_xpath).all()
             self.logger.info(f"📥 Found {len(matches)} candidate email blocks")
 
@@ -502,65 +532,68 @@ class EmailNavigation:
                     match = re.search(r"\b(\d{6})\b", full_text)
                     if match:
                         code = match.group(1)
-                        self.logger.info(f"✅ Extracted 2FA code from Communities tab: {code}")
+                        self.logger.info(
+                            f"✅ Extracted 2FA code from Communities tab: {code}"
+                        )
                         return code
                     else:
-                        self.logger.warning("No 6-digit code found in matched email — opening email to extract")
+                        self.logger.warning(
+                            "No 6-digit code found in matched email — opening email to extract"
+                        )
 
                         try:
                             # Go up to clickable wrapper for this email
                             email_xpath = email_element.get_xpath()
-                            wrapper_xpath = email_xpath + '/../..'
+                            wrapper_xpath = email_xpath + "/../.."
 
                             if not self.d.xpath(wrapper_xpath).click_exists(timeout=3):
-                                self.logger.error("❌ Failed to click matched email block")
+                                self.logger.error(
+                                    "❌ Failed to click matched email block"
+                                )
                                 return None
 
-                            self.logger.info("✅ Clicked email block — waiting for full view to load")
+                            self.logger.info(
+                                "✅ Clicked email block — waiting for full view to load"
+                            )
                             time.sleep(2)
 
                             # Attempt to extract 6-digit code from opened email
                             code_xpath = '//android.view.View[string-length(@text)=6 and translate(@text, "0123456789", "") = ""]'
 
                             if not self.d.xpath(code_xpath).wait(timeout=10):
-                                self.logger.error("❌ Code element not found in opened email")
+                                self.logger.error(
+                                    "❌ Code element not found in opened email"
+                                )
                                 return None
 
                             for el in self.d.xpath(code_xpath).all():
                                 text = el.attrib.get("text", "")
                                 if text.isdigit() and len(text) == 6:
-                                    self.logger.info(f"✅ Found 2FA code in full email: {text}")
+                                    self.logger.info(
+                                        f"✅ Found 2FA code in full email: {text}"
+                                    )
                                     return text
 
-                            self.logger.warning("❌ No matching 2FA code found in opened email")
+                            self.logger.warning(
+                                "❌ No matching 2FA code found in opened email"
+                            )
                             return None
 
                         except Exception as e:
-                            self.logger.error(f"💥 Exception during fallback email open: {e}")
+                            self.logger.error(
+                                f"💥 Exception during fallback email open: {e}"
+                            )
                             return None
 
             # If no matches found at all
-            self.logger.warning("❌ No 2FA code found in Communities tab — pressing back and falling back to main container")
+            self.logger.warning(
+                "❌ No 2FA code found in Communities tab — pressing back and falling back to main container"
+            )
             self.d.press("back")
             time.sleep(2)
-
-
-            # Step 5: Fallback — check if user is logged in
-            # if not self.verify_logged_in():
-            #     self.logger.error("❌ Login state not valid, skipping main container check")
-            #     return None
-
-            self.logger.info("✅ Logged in — trying to extract code from main container")
-
-            # Optional: dismiss translation popup
-            # translation_xpath = '^Try private translations'
-            # for _ in range(5):
-            #     if self.d.xpath(translation_xpath).exists:
-            #         self.logger.info("📌 Translation popup appeared — dismissing")
-            #         self.popup_handler.handle_all_popups()
-            #         time.sleep(1.5)
-            #         break
-            #     time.sleep(1)
+            self.logger.info(
+                "✅ Logged in — trying to extract code from main container"
+            )
 
             # Step 6: Try main container extraction
             code = self.find_code_in_main_container()
@@ -574,8 +607,6 @@ class EmailNavigation:
         except Exception as e:
             self.logger.error(f"💥 Error in email navigation sequence: {e}")
             return None
-
-
 
     def logout_of_email(self):
         try:
@@ -617,7 +648,9 @@ class EmailNavigation:
                     time.sleep(1)
 
                     # XPath for "New tab"
-                    new_tab_xpath = '//android.widget.TextView[contains(@text, "New tab")]'
+                    new_tab_xpath = (
+                        '//android.widget.TextView[contains(@text, "New tab")]'
+                    )
                     if self.d.xpath(new_tab_xpath).click_exists(timeout=3):
                         self.logger.info("✅ Opened new tab")
                         time.sleep(1)
@@ -629,7 +662,6 @@ class EmailNavigation:
             return False
 
 
-
 class TwoFactorTokenRetriever:
     def __init__(self, driver, helper, logger, firefox_package, popup_handler):
         self.d = driver
@@ -639,7 +671,6 @@ class TwoFactorTokenRetriever:
         self.popup_handler = popup_handler
         self.is_logged_in = False
 
-        
     def find_and_verify_instagram_email(self):
         try:
             self.logger.info("Searching for top Instagram verification email...")
@@ -655,10 +686,17 @@ class TwoFactorTokenRetriever:
             top_email_element = self.d.xpath(top_email_xpath)
 
             # Search inside that block for both expected text elements
-            instagram_text_xpath = f'{top_email_xpath}//android.view.View[@text="Instagram"]'
-            verify_text_xpath = f'{top_email_xpath}//android.view.View[@text="Verify your account"]'
+            instagram_text_xpath = (
+                f'{top_email_xpath}//android.view.View[@text="Instagram"]'
+            )
+            verify_text_xpath = (
+                f'{top_email_xpath}//android.view.View[@text="Verify your account"]'
+            )
 
-            if self.d.xpath(instagram_text_xpath).exists and self.d.xpath(verify_text_xpath).exists:
+            if (
+                self.d.xpath(instagram_text_xpath).exists
+                and self.d.xpath(verify_text_xpath).exists
+            ):
                 self.logger.info("Top email matches Instagram verification criteria")
 
                 if top_email_element.click_exists(timeout=3):
@@ -668,7 +706,9 @@ class TwoFactorTokenRetriever:
                     self.logger.error("Failed to click top Instagram email")
                     return False
             else:
-                self.logger.warning("Top email does not match Instagram verification content")
+                self.logger.warning(
+                    "Top email does not match Instagram verification content"
+                )
                 return False
 
         except Exception as e:
@@ -679,18 +719,18 @@ class TwoFactorTokenRetriever:
         try:
             self.logger.info("Waiting for email content to load...")
             email_content_xpath = '//android.view.View[@resource-id="email_content"]/android.widget.GridView/android.view.View[4]/android.view.View/android.widget.GridView/android.view.View/android.view.View/android.widget.GridView/android.view.View[2]/android.view.View/android.widget.GridView/android.view.View/android.view.View/android.widget.GridView/android.view.View/android.view.View[2]/android.widget.GridView/android.view.View/android.view.View'
-            
+
             if not self.d.xpath(email_content_xpath).wait(timeout=timeout):
                 self.logger.error("Email content container not found")
                 return False
-                
+
             self.logger.info("Email content container found")
             return True
-            
+
         except Exception as e:
             self.logger.error("Error waiting for email content: %s", e)
             return False
-            
+
     def extract_verification_code(self, timeout=10):
         try:
             self.logger.info("Waiting for email content to load...")
@@ -698,11 +738,11 @@ class TwoFactorTokenRetriever:
             # Define the XPath for the email content container
             content_xpath = (
                 '//android.view.View[@resource-id="email_content"]'
-                '/android.widget.GridView/android.view.View[4]/android.view.View'
-                '/android.widget.GridView/android.view.View/android.view.View'
-                '/android.widget.GridView/android.view.View[2]/android.view.View'
-                '/android.widget.GridView/android.view.View/android.view.View'
-                '/android.widget.GridView/android.view.View'
+                "/android.widget.GridView/android.view.View[4]/android.view.View"
+                "/android.widget.GridView/android.view.View/android.view.View"
+                "/android.widget.GridView/android.view.View[2]/android.view.View"
+                "/android.widget.GridView/android.view.View/android.view.View"
+                "/android.widget.GridView/android.view.View"
             )
 
             # Wait for the content container to appear
@@ -726,7 +766,7 @@ class TwoFactorTokenRetriever:
 
             for element in elements:
                 try:
-                    text = element.attrib.get('text', '')
+                    text = element.attrib.get("text", "")
                     if text.isdigit() and len(text) == 6:
                         self.logger.info(f"✅ Found 2FA code via XPath: {text}")
                         return text
@@ -745,26 +785,30 @@ class TwoFactorTokenRetriever:
         """Attempt to find and extract the verification code"""
         token_retriever = TwoFactorTokenRetriever(self.d)
         attempt = 1
-        
+
         while attempt <= max_retries:
-            self.logger.info("Attempt %d/%d to find Instagram email", attempt, max_retries)
-            
+            self.logger.info(
+                "Attempt %d/%d to find Instagram email", attempt, max_retries
+            )
+
             if token_retriever.find_and_verify_instagram_email():
                 verification_code = token_retriever.extract_verification_code()
-                
+
                 if verification_code:
                     return verification_code
-                    
+
             attempt += 1
             time.sleep(3)
-            
+
         return None
 
     def get_2fa_code(self, max_retries=3):
         try:
             self.logger.info("Starting 2FA code retrieval process")
 
-            email_nav = EmailNavigation(driver=self.d, helper=self.helper, popup_handler=self.popup_handler)
+            email_nav = EmailNavigation(
+                driver=self.d, helper=self.helper, popup_handler=self.popup_handler
+            )
             early_code = email_nav.perform_email_navigation()
             if early_code:
                 self.logger.info(f"✅ Using early extracted 2FA code: {early_code}")
@@ -778,8 +822,17 @@ class TwoFactorTokenRetriever:
             self.logger.error("Error in get_2fa_code: %s", e)
             return None
 
+
 class Firefox2FAFlow:
-    def __init__(self, email, password, record_id, base_id, table_id, firefox_package="org.mozilla.firefoy"):
+    def __init__(
+        self,
+        email,
+        password,
+        record_id,
+        base_id,
+        table_id,
+        firefox_package="org.mozilla.firefoy",
+    ):
         self.email = email
         self.password = password
         self.record_id = record_id
@@ -799,22 +852,23 @@ class Firefox2FAFlow:
             login = EmailLogin(
                 email=self.email,
                 password=self.password,
-                firefox_package=self.firefox_package
+                firefox_package=self.firefox_package,
             )
 
             if not login.perform_full_login():
                 self.logger.error("❌ Login failed")
                 return None
 
-
             helper = UIHelper(self.d)
-            popup_handler = PopupHandler(self.d, helper=helper, config_path=str(POPUP_CONFIG_PATH))
+            popup_handler = PopupHandler(
+                self.d, helper=helper, config_path=str(POPUP_CONFIG_PATH)
+            )
             token_retriever = TwoFactorTokenRetriever(
                 driver=self.d,
                 helper=helper,
                 logger=self.logger,
                 firefox_package=self.firefox_package,
-                popup_handler=popup_handler
+                popup_handler=popup_handler,
             )
 
             code = token_retriever.get_2fa_code()
@@ -830,6 +884,7 @@ class Firefox2FAFlow:
             self.logger.error(f"💥 Exception during Firefox2FAFlow: {e}")
             return None
 
+
 if __name__ == "__main__":
     try:
         logger.info("🔍 Fetching email credentials from Airtable...")
@@ -842,9 +897,7 @@ if __name__ == "__main__":
         # Fetch account record
         client = AirtableClient()
         account_data = client.get_single_active_account(
-            base_id=base_id,
-            table_id=table_id,
-            view_id=view_id
+            base_id=base_id, table_id=table_id, view_id=view_id
         )
 
         if not account_data:
@@ -865,7 +918,7 @@ if __name__ == "__main__":
             password=password,
             record_id=account_data["id"],
             base_id=account_data["base_id"],
-            table_id=account_data["table_id"]
+            table_id=account_data["table_id"],
         )
 
         code = flow.run()
@@ -877,6 +930,7 @@ if __name__ == "__main__":
 
             # 🆕 Trigger new identity after 2FA is logged
             from Shared.new_identity import new_identity  # Adjust import path as needed
+
             logger.info("🔁 Triggering new identity reset")
             if new_identity(flow.d):
                 logger.info("🆕 New identity successfully triggered")
@@ -888,4 +942,3 @@ if __name__ == "__main__":
 
     finally:
         pass
-
