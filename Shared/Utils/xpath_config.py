@@ -123,6 +123,176 @@ class InstagramXPaths:
     def new_password_entry_field(self):
         return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/layout_container_main']/android.widget.FrameLayout/android.widget.FrameLayout[2]/android.widget.FrameLayout[1]/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup[2]/android.view.ViewGroup/android.widget.EditText"
 
+    # --- Elements for Post2FAHandler ---
+
+    # --- _handle_save_login_prompt Buttons ---
+    # These are for the buttons that might appear on the "Save your login info?" or similar prompt
+    # after 2FA or initial login.
+
+    @property
+    def post_login_save_button_text_en(self):
+        """'Save' button, typically English."""
+        return '//android.widget.Button[contains(@text, "Save") or contains(@content-desc, "Save")]'
+
+    @property
+    def post_login_save_button_text_pl(self):
+        """'Zapisz' (Save) button, typically Polish."""
+        return '//android.widget.Button[contains(@text, "Zapisz") or contains(@content-desc, "Zapisz")]'
+
+    @property
+    def post_login_not_now_button_text_en(self):
+        """'Not now' button, typically English."""
+        return '//android.widget.Button[contains(@text, "Not now") or contains(@content-desc, "Not now")]'
+
+    @property
+    def post_login_not_now_button_text_pl(self):
+        """'Nie teraz' (Not now) button, typically Polish."""
+        return '//android.widget.Button[contains(@text, "Nie teraz") or contains(@content-desc, "Nie teraz")]'
+
+    # --- _handle_setup_prompt Elements ---
+
+    @property
+    def setup_on_new_device_prompt_smart(self):
+        """Smart search for 'Set up on new device' prompt text."""
+        return "%Set up on new device%"
+
+    @property
+    def skip_button_smart(self):
+        """Smart search for 'Skip' button, often on setup prompts."""
+        return "^Skip"  # Matches content-desc or text starting with "Skip"
+
+    # --- _finalize_login_check Elements (some may be duplicates from login_handler) ---
+
+    # @property
+    # def home_your_story_text(self):
+    #     """TextView element for 'Your story' on the home feed."""
+    #     return '//android.widget.TextView[@text="Your story"]' # Already defined
+
+    # def home_user_story_button(self, username: str) -> str:
+    #     """Button element for the specific user's story on the home feed."""
+    #     return f"//android.widget.Button[contains(@content-desc, \"{username}'s story\")]" # Already defined
+
+    # def home_user_story_image(self, username: str) -> str:
+    #     """ImageView element for the specific user's story on the home feed."""
+    #     return f"//android.widget.ImageView[contains(@content-desc, \"{username}'s story\")]" # Already defined
+
+    # @property
+    # def account_suspended_text_smart(self):
+    #     """Smart search for the 'We suspended your account' text."""
+    #     return "%We suspended your account%" # Already defined
+
+    # --- Login Screen Elements ---
+
+    @property
+    def login_username_label_smart(self):
+        """Smart search for the username field label."""
+        return "^Username, email or mobile number"
+
+    @property
+    def login_password_label_smart(self):
+        """Smart search for the password field label."""
+        return "^Password"
+
+    @property
+    def login_edittext_field_generic(self):
+        """Generic XPath for EditText fields on the login screen.
+        NOTE: Relies on index (0 for username, 1 for password) in the original script.
+              Finding specific resource-ids is more robust if possible.
+        """
+        return "//android.widget.EditText"
+
+    @property
+    def login_show_password_button(self):
+        """Button to toggle password visibility."""
+        return '//android.widget.Button[@content-desc="Show password"]'
+
+    @property
+    def login_button(self):
+        """The main 'Log in' button."""
+        return '//android.widget.Button[@content-desc="Log in"]'
+
+    # --- Post-Login State Detection Elements ---
+
+    # --- 2FA / Verification Indicators ---
+
+    @property
+    def two_fa_check_email_text_view(self):
+        """TextView indicating user should check their email for a code."""
+        return '//android.widget.TextView[contains(@text, "check your email")]'
+
+    @property
+    def two_fa_prompt_view_desc(self):
+        """View element with content description for 'Check your email' prompt."""
+        return '//android.view.View[@content-desc="Check your email"]'
+
+    @property
+    def two_fa_code_input_field(self):
+        """Generic EditText field likely used for entering the 2FA code."""
+        # NOTE: Same generic XPath as login_edittext_field_generic. Consider refining if possible.
+        return "//android.widget.EditText"
+
+    # --- Login Success Indicators / Prompts ---
+
+    @property
+    def save_login_info_prompt_smart(self):
+        """Smart search for 'Save your login info?' prompt text."""
+        return "^Save your login info%"
+
+    @property
+    def save_login_info_prompt_view(self):
+        """View element with content description for 'Save your login info?' prompt."""
+        # Note: This might be redundant with the smart search version above. Choose the most reliable.
+        return '//android.view.View[@content-desc="Save your login info?"]'
+
+    @property
+    def save_login_info_save_button(self):
+        """The 'Save' button on the 'Save your login info?' prompt."""
+        return '//android.widget.Button[@content-desc="Save"]'
+
+    @property
+    def turn_on_notifications_prompt_smart(self):
+        """Smart search for 'Turn on notifications' prompt text."""
+        return "%Turn on notifications%"
+
+    @property
+    def home_your_story_text(self):
+        """TextView element for 'Your story' on the home feed."""
+        return '//android.widget.TextView[@text="Your story"]'
+
+    # --- Dynamic Methods for User-Specific Elements ---
+
+    def home_user_story_button(self, username: str) -> str:
+        """Button element for the specific user's story on the home feed."""
+        # Escapes the single quote within the f-string for XPath compatibility
+        return (
+            f'//android.widget.Button[contains(@content-desc, "{username}\'s story")]'
+        )
+
+    def home_user_story_image(self, username: str) -> str:
+        """ImageView element for the specific user's story on the home feed."""
+        # Escapes the single quote within the f-string for XPath compatibility
+        return f'//android.widget.ImageView[contains(@content-desc, "{username}\'s story")]'
+
+    # --- Error / Issue Indicators ---
+
+    @property
+    def login_incorrect_password_text_view(self):
+        """TextView displaying the 'Incorrect Password' error message."""
+        return '//android.widget.TextView[@text="Incorrect Password"]'
+
+    @property
+    def login_incorrect_password_ok_button(self):
+        """The 'OK' button on the 'Incorrect Password' error popup."""
+        return '//android.widget.Button[@text="OK"]'
+
+    @property
+    def account_suspended_text_smart(self):
+        """Smart search for the 'We suspended your account' text."""
+        # Note: This XPath is also defined in the default popup_config.json for watcher handling.
+        return "%We suspended your account%"
+
+    # === End InstagramXPaths additions ===
+
     # --- XPaths from instagram_actions.py ---
 
     @property
@@ -333,6 +503,164 @@ class InstagramXPaths:
         """The RecyclerView likely containing search results (posts/reels)."""
         # From perform_keyword_search
         return "//*[contains(@resource-id, 'recycler_view')]"
+
+
+class FirefoxEmailXPaths:
+    """
+    Contains XPath selectors specifically for automating Firefox and the op.pl email interface.
+    NOTE: These are highly specific to the observed UI and likely to break if the UI changes.
+    """
+
+    def __init__(
+        self, firefox_package="org.mozilla.firefox"
+    ):  # Corrected package name example
+        # Using firefox_package might not be necessary if IDs are stable, but kept for consistency
+        self.firefox_package = firefox_package
+
+    # --- Firefox Browser UI ---
+    @property
+    def firefox_url_bar_smart_search(self):
+        """Smart search text often present in the URL bar."""
+        # From FirefoxSession._launch_firefox
+        return "^Search or enter address"
+
+    @property
+    def firefox_url_bar_edit_text(self):
+        """EditText element for the URL bar (fallback)."""
+        # From FirefoxSession._launch_firefox and _navigate_to_url
+        # Consider making the resource-id part more robust if it changes
+        return '//android.widget.EditText[contains(@resource-id, "edit_url_view")]'
+
+    @property
+    def firefox_tabs_button(self):
+        """Button to view open tabs."""
+        # From EmailNavigation.open_new_tab
+        return '//android.widget.ImageView[@content-desc="Tabs"]'
+
+    @property
+    def firefox_new_tab_button(self):
+        """Button/TextView to open a new tab from the tabs view."""
+        # From EmailNavigation.open_new_tab
+        return '//android.widget.TextView[contains(@text, "New tab")]'
+
+    # --- op.pl Email Login UI ---
+    @property
+    def email_login_email_field(self):
+        """Email input field on the login page."""
+        # From EmailLogin.handle_email_input
+        return '//android.widget.EditText[@resource-id="email"]'
+
+    @property
+    def email_login_password_field(self):
+        """Password input field on the login page."""
+        # From EmailLogin.handle_email_input and handle_password_input
+        return '//android.widget.EditText[@resource-id="password"]'
+
+    @property
+    def email_login_next_button_text(self):
+        """Text for the 'NEXT' button after entering email."""
+        # From EmailLogin.handle_email_input (used in smart_button_clicker)
+        return "NEXT"
+
+    @property
+    def email_login_next_button_fallback(self):
+        """Fallback XPath for the 'NEXT' button."""
+        # From EmailLogin.handle_email_input (used in smart_button_clicker)
+        return '//android.widget.Button[@text="NEXT"]'
+
+    @property
+    def email_login_login_button_text(self):
+        """Text for the 'LOG IN' button after entering password."""
+        # From EmailLogin.handle_password_input (used in smart_button_clicker)
+        return "LOG IN"
+
+    @property
+    def email_login_login_button_fallback(self):
+        """Fallback XPath for the 'LOG IN' button."""
+        # From EmailLogin.handle_password_input (used in smart_button_clicker)
+        return '//android.widget.Button[@text="LOG IN"]'
+
+    # --- op.pl Email Inbox/Content UI ---
+    @property
+    def email_main_container(self):
+        """Main container element indicating successful login/inbox view."""
+        # From EmailNavigation.verify_logged_in
+        return "^React_MainContainer"  # Smart search by resource-id end
+
+    @property
+    def email_instagram_verification_block(self):
+        """XPath to find the container block for an Instagram verification email preview."""
+        # From EmailNavigation.find_code_in_main_container
+        # This is complex and highly dependent on the specific email client's web UI structure.
+        return (
+            '//android.view.View[@resource-id="React_MainContainer"]'
+            '//android.view.View[.//android.view.View[@text="Instagram"] and .//android.view.View[@text="Verify your account"]]'
+        )
+
+    @property
+    def email_instagram_sender_text(self):
+        """XPath to find the 'Instagram' sender text within an email block/preview."""
+        # Used implicitly in email_instagram_verification_block logic, defining explicitly
+        return './/android.view.View[@text="Instagram"]'  # Relative search
+
+    @property
+    def email_instagram_subject_text(self):
+        """XPath to find the 'Verify your account' subject text within an email block/preview."""
+        # Used implicitly in email_instagram_verification_block logic, defining explicitly
+        return './/android.view.View[@text="Verify your account"]'  # Relative search
+
+    @property
+    def email_opened_content_container(self):
+        """XPath for the container holding the full content of an opened email."""
+        # From EmailNavigation._open_email_and_extract_code and TwoFactorTokenRetriever.wait_for_email_content
+        # WARNING: This XPath is extremely long and fragile, based on nested GridViews.
+        # It's highly likely to break. Finding a more stable identifier is recommended.
+        return (
+            '//android.view.View[@resource-id="email_content"]'
+            "/android.widget.GridView/android.view.View[4]/android.view.View"
+            "/android.widget.GridView/android.view.View/android.view.View"
+            "/android.widget.GridView/android.view.View[2]/android.view.View"
+            "/android.widget.GridView/android.view.View/android.view.View"
+            "/android.widget.GridView/android.view.View"
+            "/android.view.View[2]/android.widget.GridView/android.view.View/android.view.View"
+        )  # Simplified slightly if possible
+
+    @property
+    def email_opened_verification_code(self):
+        """XPath to find a 6-digit code within the opened email content."""
+        # From EmailNavigation._open_email_and_extract_code and TwoFactorTokenRetriever.extract_verification_code
+        # This uses XPath functions for validation.
+        return '//android.view.View[string-length(@text)=6 and translate(@text, "0123456789", "") = ""]'
+
+    @property
+    def email_sidebar_button(self):
+        """Button to open the sidebar/menu in the email client."""
+        # From EmailNavigation.open_sidebar
+        return '//android.widget.Button[@resource-id="sidebar-btn"]'
+
+    @property
+    def email_sidebar_write_message_button(self):
+        """'Write message' button inside the sidebar (used to verify sidebar is open)."""
+        # From EmailNavigation.verify_sidebar_open
+        return '//android.widget.Button[@text="Napisz wiadomość"]'  # Text is language-specific
+
+    @property
+    def email_sidebar_communities_button(self):
+        """'Communities' button/view inside the sidebar."""
+        # From EmailNavigation.navigate_to_communities
+        return '//android.view.View[contains(@text, "Społeczności")]'  # Text is language-specific
+
+    @property
+    def email_account_menu_button(self):
+        """Button to open the user account menu (for logout)."""
+        # From EmailNavigation.logout_of_email
+        return '//android.widget.Button[@text="Menu użytkownika"]'  # Text is language-specific
+
+    @property
+    def email_logout_button(self):
+        """Logout button/view within the account menu."""
+        # From EmailNavigation.logout_of_email
+        return '//android.view.View[contains(@text, "Wyloguj") or contains(@content-desc, "Sign out")]'  # Text is language-specific
 
 
 # TODO Implement these xpath correcty

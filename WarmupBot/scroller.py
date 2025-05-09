@@ -31,28 +31,6 @@ if not SCROLLER_CONFIG:
     logger.error(
         "Scroller configuration not found in config.yaml! Using default values."
     )
-    # Define fallback defaults here if necessary, or raise an error
-    # SCROLLER_CONFIG = {  # Example fallback structure
-    #     "keywords": ["model", "fitness"],
-    #     "delays": {
-    #         "default": [1.0, 2.0],
-    #         "after_like": [1.8, 2.3],
-    #         "between_scrolls": [2.0, 3.0],
-    #         "before_scroll": [1.5, 2.2],
-    #         "after_post_tap": [1.0, 1.5],
-    #         "after_comment": [1.2, 2.0],
-    #         "comment_scroll": [1.5, 2.5],
-    #         "back_delay": [0.8, 1.2],
-    #     },
-    #     "max_scrolls": 10,
-    #     "percent_reels_to_watch": 0.5,
-    #     "watch_time_range": [3.0, 6.0],
-    #     "like_probability": 0.5,
-    #     "comment_probability": 0.1,
-    #     "idle_after_actions": [5, 10],
-    #     "idle_duration_range": [3, 7],
-    #     "max_runtime_seconds": 180,  # Added default max runtime
-    # }
 
 # Extract keywords from the loaded config
 KEYWORDS = SCROLLER_CONFIG.get("keywords", ["model"])  # Provide a default keyword list

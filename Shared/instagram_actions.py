@@ -9,10 +9,10 @@ from typing import Dict, Optional, Tuple
 
 import uiautomator2 as u2
 
-from Shared.logger_config import setup_logger
 # Assuming SwipeHelper class is moved to its own file
-from Shared.swipe_helper import SwipeHelper
-from Shared.xpath_config import InstagramXPaths
+from Shared.UI.swipe_helper import SwipeHelper
+from Shared.Utils.logger_config import setup_logger
+from Shared.Utils.xpath_config import InstagramXPaths
 
 # Module-level logger (can be used by helper functions if any)
 # logger = setup_logger(__name__) # You can keep this if needed elsewhere
