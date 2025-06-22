@@ -6,7 +6,6 @@ import time
 from typing import Optional
 
 import uiautomator2 as u2
-
 from Shared.Data.airtable_manager import AirtableClient
 
 # Assuming InstagramInteractions is now in Shared directory

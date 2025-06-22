@@ -8,23 +8,23 @@ from typing import Optional, Tuple
 
 import uiautomator2 as u2
 
-# --- Shared Dependencies ---
-from Shared.airtable_manager import AirtableClient
+# Assuming SoundAdder is moved to its own file:
+from PostingBot.add_music import SoundAdder
 
 # Assuming this function will also be refactored to use InstagramInteractions later
-from Shared.generate_caption import generate_and_enter_caption
-from Shared.logger_config import setup_logger
-from Shared.popup_handler import PopupHandler
+from Shared.Captions.generate_caption import generate_and_enter_caption
 
-# Assuming SoundAdder is moved to its own file:
-from UploadBot.add_music import SoundAdder
+# --- Shared Dependencies ---
+from Shared.Data.airtable_manager import AirtableClient
 
 # --- UploadBot Dependencies ---
-from UploadBot.content_management import ContentManager  # Handles Drive/Local files
-from UploadBot.device_manager import MediaCleaner  # Handles ADB file cleanup
+from Shared.Data.google_drive_manager import ContentManager  # Handles Drive/Local files
 
 # Import the main UI driver and the separated SoundAdder
-from UploadBot.instagram_actions import InstagramInteractions
+from Shared.instagram_actions import InstagramInteractions
+from Shared.UI.popup_handler import PopupHandler
+from Shared.Utils.device_manager import MediaCleaner  # Handles ADB file cleanup
+from Shared.Utils.logger_config import setup_logger
 
 logger = setup_logger(__name__)
 

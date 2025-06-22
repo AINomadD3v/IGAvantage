@@ -478,7 +478,10 @@ class InstagramInteractions:
                 f"Error inputting text into '{xpath}': {e}", exc_info=True
             )
             return False
+#ERROR:
 
+
+    #NOTE: 
     # TODO: Add input_text_stealthily method using StealthTyper if needed
 
     def get_element_text(self, xpath: str, timeout: int = 5) -> Optional[str]:

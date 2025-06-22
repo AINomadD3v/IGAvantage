@@ -1,191 +1,190 @@
 {
-  description = "Development environment for your project";
+  description = "development environment for your project";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"; # or whatever you want to pin
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    uiautomator2.url = "path:/home/ai-dev/CustomLibraries/uiautomator2-nix";
   };
 
   outputs = {
     self,
     nixpkgs,
     flake-utils,
+    uiautomator2,
   }:
-    flake-utils.lib.eachDefaultSystem (
-      system: let
-        pkgs = import nixpkgs {inherit system;};
-        pythonPackages = pkgs.python313Packages;
-        addPythonPackage = name: pythonPackages.${name};
+    flake-utils.lib.eachDefaultSystem (system: let
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfreePredicate = pkg:
+          builtins.elem (nixpkgs.lib.getName pkg) ["steam-unwrapped"];
+      };
 
-        pythonDepsList = [
-          "openai"
-          "pytesseract"
-          "opencv-python"
-          "dnspython"
-          "gdown"
-          "pyaml"
-          "pyyaml"
-          "requests"
-          "lxml"
-          "pillow"
-          "retry"
-          "progress"
-          "xmltodict"
-          "six"
-          "logzero"
-          "packaging"
-          "whichcraft"
-          "pbr"
-          "pyelftools"
-          "pycryptodome"
-          "pytest"
-          "isort"
-          "pytest-cov"
-          "ipython"
-          "coverage"
-          "inflection"
-          "pydantic"
-          "poetry-core"
-          "poetry-dynamic-versioning"
-          "python-dotenv"
-          "opencv4"
-          "scikitimage"
-          "pandas"
-          "google-auth"
-          "google-auth-oauthlib"
-          "google-auth-httplib2"
-          "google-api-python-client"
-          "scikit-learn"
-          "deprecated"
-          "filelock"
-          "deprecation"
+      python = pkgs.python313;
+
+      pythonOverridden = python.override {
+        packageOverrides = self: super: {
+          adbutils = super.buildPythonPackage rec {
+            pname = "adbutils";
+            version = "2.9.2";
+            format = "pyproject";
+            src = super.fetchPypi {
+              inherit pname version;
+              sha256 = "sha256-beaLQULFTfTb6gckApnAUnFiUxoI6Lr8NsP9GsnEKR4=";
+            };
+            nativeBuildInputs = with super; [setuptools wheel pbr retry2];
+            propagatedBuildInputs = with super; [
+              requests
+              deprecation
+              whichcraft
+              packaging
+              pillow
+            ];
+            doCheck = false;
+          };
+
+          pyairtable = super.buildPythonPackage rec {
+            pname = "pyairtable";
+            version = "3.1.1";
+            format = "setuptools";
+            src = super.fetchPypi {
+              inherit pname version;
+              sha256 = "sha256-sYX+8SEZ8kng5wSrTksVopCA/Ikq1NVRoQU6G7YJ7y4=";
+            };
+            propagatedBuildInputs = with super; [requests inflection pydantic];
+            doCheck = false;
+          };
+
+          uiautomator2 = super.buildPythonPackage rec {
+            pname = "uiautomator2";
+            version = "3.2.0";
+            format = "pyproject";
+
+            # 👇 This is the magic: pull raw source from the local flake
+            src = uiautomator2.packages.${system}.src;
+
+            nativeBuildInputs = with super; [setuptools wheel];
+            propagatedBuildInputs = with super; [
+              self.adbutils
+              requests
+              lxml
+              pillow
+              retry2
+            ];
+
+            postPatch = ''
+              echo "Patching version into uiautomator2..."
+              sed -i "s/__version__ = .*/__version__ = \"${version}\"/" uiautomator2/version.py
+            '';
+
+            doCheck = false;
+            pythonImportsCheck = ["uiautomator2"];
+          };
+        };
+      };
+
+      nixpkgspythondepnames = [
+        "openai"
+        "pytesseract"
+        "opencv-python"
+        "opencv4"
+        "dnspython"
+        "gdown"
+        "pyyaml"
+        "requests"
+        "lxml"
+        "pillow"
+        "progress"
+        "xmltodict"
+        "six"
+        "logzero"
+        "packaging"
+        "whichcraft"
+        "pbr"
+        "pyelftools"
+        "pycryptodome"
+        "pytest"
+        "isort"
+        "pytest-cov"
+        "ipython"
+        "coverage"
+        "inflection"
+        "pydantic"
+        "poetry-core"
+        "poetry-dynamic-versioning"
+        "python-dotenv"
+        "scikit-image"
+        "pandas"
+        "google-auth"
+        "google-auth-oauthlib"
+        "google-auth-httplib2"
+        "google-api-python-client"
+        "scikit-learn"
+        "deprecated"
+        "filelock"
+        "deprecation"
+        "pip"
+        "setuptools"
+        "playwright"
+        "beautifulsoup4"
+        "pytest-playwright"
+      ];
+
+      pythonEnv = pythonOverridden.withPackages (
+        ps:
+          (map (name: ps.${name}) nixpkgspythondepnames)
+          ++ [ps.adbutils ps.pyairtable ps.uiautomator2]
+      );
+    in {
+      devShells.default = pkgs.mkShell {
+        packages = [
+          pythonEnv
+          pkgs.android-tools
+          pkgs.tesseract
+          pkgs.playwright-driver.browsers
+
+          # Playwright deps
+          pkgs.glib
+          pkgs.glibc
+          pkgs.nss
+          pkgs.nspr
+          pkgs.dbus
+          pkgs.atk
+          pkgs.at-spi2-core
+          pkgs.cups
+          pkgs.gtk3
+          pkgs.gtk4
+          pkgs.gtkmm3
+          pkgs.expat
+          pkgs.xorg.libxcb
+          pkgs.xorg.libX11
+          pkgs.xorg.libXcomposite
+          pkgs.xorg.libXdamage
+          pkgs.xorg.libXext
+          pkgs.xorg.libXfixes
+          pkgs.xorg.libXrandr
+          pkgs.libxkbcommon
+          pkgs.mesa
+          pkgs.pango
+          pkgs.cairo
+          pkgs.udev
+          pkgs.alsa-lib
+          pkgs.steam-run
         ];
 
-        pythonDeps = builtins.map addPythonPackage (builtins.attrNames (builtins.listToAttrs (map (n: {
-            name = n;
-            value = null;
-          })
-          pythonDepsList)));
+        shellHook = ''
+          echo "---------------------------------------------------------------------"
+          echo "nix dev shell ready."
+          echo "Python environment (3.13) is active with all dependencies."
+          echo "  python: $(which python) ($($(which python) --version 2>&1))"
+          echo "  pip:    $(which pip)"
+          echo ""
 
-        customPython = pkgs.python313.withPackages (ps: pythonDeps);
+          export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+          export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
-        pyairtable = pythonPackages.buildPythonPackage rec {
-          pname = "pyairtable";
-          version = "2.2.0";
-          format = "setuptools";
-          src = pythonPackages.fetchPypi {
-            inherit pname version;
-            sha256 = "sha256-LTHHU4uYcwE4WKpmkW0dzdf6qLYA9YzBhR26nW957Tc=";
-          };
-          propagatedBuildInputs = with pythonPackages; [requests inflection pydantic];
-          doCheck = false;
-        };
-
-        apkutils2 = pythonPackages.buildPythonPackage rec {
-          pname = "apkutils2";
-          version = "1.0.0";
-          format = "setuptools";
-          src = pythonPackages.fetchPypi {
-            inherit pname version;
-            sha256 = "sha256-xa6PhtPr7mpZ/AFNiFB3Qdfz+asYO6s0tE0BH+h4Zgs=";
-          };
-          propagatedBuildInputs = with pythonPackages; [lxml xmltodict pyelftools pycryptodome];
-          postPatch = ''
-            cat >> apkutils2/cigam.py << EOF
-            class Magic:
-                def __init__(self): pass
-                def load(self): pass
-                def match_buffer(self): pass
-            EOF
-            sed -i 's/from cigam import Magic/from .cigam import Magic/' apkutils2/__init__.py
-          '';
-          doCheck = false;
-        };
-
-        adbutils = pythonPackages.buildPythonPackage rec {
-          pname = "adbutils";
-          version = "2.5.0";
-          format = "pyproject";
-          src = pythonPackages.fetchPypi {
-            inherit pname version;
-            sha256 = "sha256-CQa70LCVLNrSmDIFVjRYFsfbaOAmL6eNinsg/ejn+DA=";
-          };
-          nativeBuildInputs = with pythonPackages; [poetry-core setuptools pbr];
-          propagatedBuildInputs = with pythonPackages; [requests deprecation whichcraft packaging retry pillow apkutils2];
-          doCheck = false;
-        };
-
-        imutils = pythonPackages.buildPythonPackage rec {
-          pname = "imutils";
-          version = "0.5.4";
-          src = pkgs.fetchurl {
-            url = "https://files.pythonhosted.org/packages/source/i/imutils/imutils-${version}.tar.gz";
-            sha256 = "094gbnqhyjha5w7wp6f1mq65mwqwb5i4m1600l1m8p4bragpm0h3";
-          };
-          propagatedBuildInputs = with pythonPackages; [opencv4 numpy scipy matplotlib];
-          doCheck = false;
-        };
-
-        findit = pythonPackages.buildPythonPackage rec {
-          pname = "findit";
-          version = "0.5.8";
-          format = "setuptools";
-          src = pythonPackages.fetchPypi {
-            inherit pname version;
-            sha256 = "sha256-qbIbEZSqpno+BH9h2ZbjHz9IxFEtsIL5luU1KqWpGcI=";
-          };
-          propagatedBuildInputs = with pythonPackages; [opencv4 numpy imutils scikitimage];
-          postPatch = ''
-            sed -i 's/from skimage.measure import compare_ssim/from skimage.metrics import structural_similarity as compare_ssim/' findit/engine/sim.py
-          '';
-          doCheck = false;
-        };
-
-        loguru = pythonPackages.buildPythonPackage rec {
-          pname = "loguru";
-          version = "0.7.2";
-          src = pythonPackages.fetchPypi {
-            inherit pname version;
-            sha256 = "sha256-5nGlNSJRXzT9QGNA7paMueyvvEs2xnnaA8GP2NC9Uaw=";
-          };
-          propagatedBuildInputs = [];
-          doCheck = false;
-        };
-
-        uiautomator2 = pythonPackages.buildPythonPackage rec {
-          pname = "uiautomator2";
-          version = "3.2.5";
-          format = "pyproject";
-          src = pythonPackages.fetchPypi {
-            inherit pname version;
-            sha256 = "sha256-jkFGm6IYFG258Drqs3xLvr9lGwrfTmueXS54DCQ4cuM=";
-          };
-          nativeBuildInputs = with pythonPackages; [poetry-core poetry-dynamic-versioning];
-          propagatedBuildInputs = [adbutils apkutils2 findit];
-          doCheck = false;
-        };
-      in {
-        devShells.default = pkgs.mkShell {
-          buildInputs =
-            [
-              customPython
-              uiautomator2
-              adbutils
-              apkutils2
-              pyairtable
-              findit
-              imutils
-              loguru
-              pkgs.android-tools
-            ]
-            ++ pythonDeps;
-
-          shellHook = ''
-            SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-            export PYTHONPATH="$SITE_PACKAGES:${uiautomator2}/lib/python3.11/site-packages:${adbutils}/lib/python3.11/site-packages:${apkutils2}/lib/python3.11/site-packages:${pyairtable}/lib/python3.11/site-packages:${findit}/lib/python3.11/site-packages:${imutils}/lib/python3.11/site-packages:${loguru}/lib/python3.11/site-packages:$PYTHONPATH"
-            echo "✅ DevShell ready: PYTHONPATH set"
-          '';
-        };
-      }
-    );
+          echo "---------------------------------------------------------------------"
+        '';
+      };
+    });
 }

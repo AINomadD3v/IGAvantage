@@ -7,6 +7,10 @@ from typing import Optional, Tuple
 
 import uiautomator2 as u2  # Keep for type hints if needed
 
+# --- Import the main Instagram UI driver ---
+# Adjust path if InstagramInteractions moves to Shared later
+from UploadBot.instagram_actions import InstagramInteractions
+
 from Shared.airtable_manager import AirtableClient  # Keep for main function logic
 
 # Import the config loader functions
@@ -16,10 +20,6 @@ from Shared.config_loader import get_scroller_config, load_yaml_config
 from Shared.logger_config import setup_logger
 from Shared.popup_handler import PopupHandler  # Keep for popup handling
 from Shared.stealth_typing import StealthTyper  # Keep for keyword search typing
-
-# --- Import the main Instagram UI driver ---
-# Adjust path if InstagramInteractions moves to Shared later
-from UploadBot.instagram_actions import InstagramInteractions
 
 logger = setup_logger(name="Scroller")  # Use the specific logger name
 
@@ -31,6 +31,28 @@ if not SCROLLER_CONFIG:
     logger.error(
         "Scroller configuration not found in config.yaml! Using default values."
     )
+    # Define fallback defaults here if necessary, or raise an error
+    # SCROLLER_CONFIG = {  # Example fallback structure
+    #     "keywords": ["model", "fitness"],
+    #     "delays": {
+    #         "default": [1.0, 2.0],
+    #         "after_like": [1.8, 2.3],
+    #         "between_scrolls": [2.0, 3.0],
+    #         "before_scroll": [1.5, 2.2],
+    #         "after_post_tap": [1.0, 1.5],
+    #         "after_comment": [1.2, 2.0],
+    #         "comment_scroll": [1.5, 2.5],
+    #         "back_delay": [0.8, 1.2],
+    #     },
+    #     "max_scrolls": 10,
+    #     "percent_reels_to_watch": 0.5,
+    #     "watch_time_range": [3.0, 6.0],
+    #     "like_probability": 0.5,
+    #     "comment_probability": 0.1,
+    #     "idle_after_actions": [5, 10],
+    #     "idle_duration_range": [3, 7],
+    #     "max_runtime_seconds": 180,  # Added default max runtime
+    # }
 
 # Extract keywords from the loaded config
 KEYWORDS = SCROLLER_CONFIG.get("keywords", ["model"])  # Provide a default keyword list
@@ -178,8 +200,8 @@ def process_reel(
     watch_time_range = SCROLLER_CONFIG.get("watch_time_range", [3.0, 6.0])
     like_probability = SCROLLER_CONFIG.get("like_probability", 0.5)
     comment_probability = SCROLLER_CONFIG.get("comment_probability", 0.1)
-
     full_watch_time = random.uniform(*watch_time_range)
+
     like_delay = random.uniform(1.2, max(1.3, full_watch_time - 0.5))
     interaction_times = sorted(
         random.sample(
@@ -390,6 +412,8 @@ def run_warmup_session(insta_actions: InstagramInteractions):
 
     # --- Setup Popup Handler ---
     popup_handler = PopupHandler(device)
+    # TODO
+
     # TODO: Set context for popup_handler if callbacks need it
     # popup_handler.set_context(...)
     popup_handler.register_watchers()

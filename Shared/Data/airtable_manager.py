@@ -1,16 +1,27 @@
 # airtable_manager.py
 
 import os
-import requests
 from datetime import datetime
+
 import pytz
+import requests
 from dotenv import load_dotenv
 from pyairtable import Api
-from .logger_config import setup_logger
+
+from Shared.Utils.logger_config import setup_logger  # ✅
 
 logger = setup_logger(__name__)
+# airtable_manager.py (top of file)
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
+# --- Load dotenv from project root ---
+# This works reliably regardless of where this file is called from
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+dotenv_path = os.path.join(project_root, ".env")
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path)
+else:
+    raise RuntimeError(f"🚨 .env file not found at expected location: {dotenv_path}")
+
 
 class AirtableClient:
     def __init__(self, table_key: str = None):
@@ -30,18 +41,18 @@ class AirtableClient:
                 "content_alexis": {
                     "base_id": os.getenv("ALEXIS_BASE_ID"),
                     "table_id": os.getenv("ALEXIS_CONTENT_TABLE_ID"),
-                    "view": "Unposted"
+                    "view": "Unposted",
                 },
                 "content_maddison": {
                     "base_id": os.getenv("MADDISON_BASE_ID"),
                     "table_id": os.getenv("MADDISON_CONTENT_TABLE_ID"),
-                    "view": "Unposted"
+                    "view": "Unposted",
                 },
                 "warmup_accounts": {
                     "base_id": os.getenv("IG_ARMY_BASE_ID"),
                     "table_id": os.getenv("IG_ARMY_WARMUP_ACCOUNTS_TABLE_ID"),
-                    "view": "Warmup"
-                }
+                    "view": "Warmup",
+                },
             }
 
             if table_key not in table_map:
@@ -53,9 +64,9 @@ class AirtableClient:
             self.view_name = config["view"]
 
             if not all([self.base_id, self.table_id, self.view_name]):
-                raise ValueError(f"Missing required environment variables for table key: '{table_key}'")
-
-    
+                raise ValueError(
+                    f"Missing required environment variables for table key: '{table_key}'"
+                )
 
     def get_unposted_records_for_today(self, max_count: int = 1):
         try:
@@ -76,7 +87,9 @@ class AirtableClient:
                     continue
 
                 # Airtable returns ISO format like '2025-04-06T00:00:00.000Z'
-                scheduled_date = schedule_raw.split("T")[0]  # Just the 'YYYY-MM-DD' part
+                scheduled_date = schedule_raw.split("T")[
+                    0
+                ]  # Just the 'YYYY-MM-DD' part
 
                 if scheduled_date != today_str:
                     continue
@@ -84,16 +97,22 @@ class AirtableClient:
                 username = fields.get("Username")
                 media_url = fields.get("Drive URL")
                 raw_package = fields.get("Package Name")
-                package_name = raw_package[0] if isinstance(raw_package, list) and raw_package else raw_package
+                package_name = (
+                    raw_package[0]
+                    if isinstance(raw_package, list) and raw_package
+                    else raw_package
+                )
 
-                matching.append({
-                    "id": record["id"],
-                    "fields": {
-                        "username": username,
-                        "package_name": package_name,
-                        "media_url": media_url
+                matching.append(
+                    {
+                        "id": record["id"],
+                        "fields": {
+                            "username": username,
+                            "package_name": package_name,
+                            "media_url": media_url,
+                        },
                     }
-                })
+                )
 
                 if len(matching) >= max_count:
                     break
@@ -101,7 +120,9 @@ class AirtableClient:
             return matching
 
         except Exception as e:
-            logger.error(f"❌ Error fetching multiple unposted records: {e}", exc_info=True)
+            logger.error(
+                f"❌ Error fetching multiple unposted records: {e}", exc_info=True
+            )
             return []
 
     def mark_something_went_wrong_and_rotate(self, record_id: str):
@@ -109,11 +130,15 @@ class AirtableClient:
         Marks 'Something Went Wrong?' = True in Airtable, logs it, and returns a signal to rotate account.
         """
         try:
-            self.update_record_fields(record_id, {'Something Went Wrong': True})
-            logger.warning(f"⚠️ Marked record {record_id} as 'Something Went Wrong' = True")
+            self.update_record_fields(record_id, {"Something Went Wrong": True})
+            logger.warning(
+                f"⚠️ Marked record {record_id} as 'Something Went Wrong' = True"
+            )
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to mark record {record_id} with 'Something Went Wrong': {e}")
+            logger.error(
+                f"❌ Failed to mark record {record_id} with 'Something Went Wrong': {e}"
+            )
             return False
 
     def update_record_fields(self, record_id: str, fields: dict):
@@ -139,7 +164,14 @@ class AirtableClient:
             logger.info(f"🧾 Base: {base_id} | Table: {table_id} | View: {view_id}")
 
             table = self.api.table(base_id, table_id)
-            fields = ['Account', 'Password', 'Email', 'Email Password', 'Package Name', 'Device ID']
+            fields = [
+                "Account",
+                "Password",
+                "Email",
+                "Email Password",
+                "Package Name",
+                "Device ID",
+            ]
 
             records = table.all(view=view_id, fields=fields, max_records=1)
 
@@ -172,7 +204,7 @@ class AirtableClient:
                 "id": record_id,
                 "fields": record_fields,
                 "base_id": base_id,
-                "table_id": table_id
+                "table_id": table_id,
             }
 
         except requests.exceptions.RequestException as api_error:
@@ -181,9 +213,6 @@ class AirtableClient:
         except Exception as e:
             logger.error(f"❌ Unexpected error: {e}")
             return None
-
-
-
 
     def get_pending_warmup_records(self, max_count=None):
         """
@@ -205,21 +234,148 @@ class AirtableClient:
                     return value[0]
                 return value
 
-            result.append({
-                "record_id": record["id"],
-                "username": flatten(fields.get("Username")),
-                "device_id": flatten(fields.get("Device ID")),
-                "package_name": flatten(fields.get("Package Name")),
-            })
+            result.append(
+                {
+                    "record_id": record["id"],
+                    "username": flatten(fields.get("Username")),
+                    "device_id": flatten(fields.get("Device ID")),
+                    "package_name": flatten(fields.get("Package Name")),
+                }
+            )
 
             if max_count and len(result) >= max_count:
                 break
 
         return result
 
+    # airtable_manager.py
+
+    def get_warmup_credentials(self):
+        """
+        Fetches email credentials for a single account from the 'warmup_accounts' view.
+        This is a specialized function for the verification script.
+        """
+        try:
+            # Configuration for warmup accounts, loaded from environment variables
+            base_id = os.getenv("IG_ARMY_BASE_ID")
+            table_id = os.getenv("IG_ARMY_ACCS_TABLE_ID")
+
+            if not all([base_id, table_id]):
+                raise ValueError(
+                    "Missing IG_ARMY_BASE_ID or IG_ARMY_ACCOUNTS_TABLE_ID in .env file"
+                )
+
+            logger.info(
+                f"📡 Fetching warmup account credentials from Base: {base_id}, Table: {table_id}"
+            )
+
+            table = self.api.table(base_id, table_id)
+
+            # Specify the only two fields we need for this operation
+            fields_to_fetch = ["Email", "Email Password"]
+
+            # Fetch the first available record from the specified view
+            records = table.all(fields=fields_to_fetch, max_records=1)
+
+            if not records:
+                logger.warning(
+                    "⚠️ No accounts found in the 'Warmup' view to fetch credentials from."
+                )
+                return None
+
+            record_fields = records[0].get("fields", {})
+            email_address = record_fields.get("Email")
+            email_password = record_fields.get("Email Password")
+
+            if not email_address or not email_password:
+                logger.error(
+                    f"❌ Record {records[0].get('id')} is missing the 'Email' or 'Email Password' field."
+                )
+                return None
+
+            logger.info(f"✅ Found credentials for email: {email_address}")
+            return {"email": email_address, "password": email_password}
+
+        except Exception as e:
+            logger.error(
+                f"❌ An error occurred while fetching warmup account credentials: {e}",
+                exc_info=True,
+            )
+            return None
+        # airtable_manager.py
+
+    # ... (existing AirtableClient class code) ...
+
+    def get_warmup_credentials_bulk(self, limit: int = 10):
+        """
+        Fetches email credentials for multiple accounts from the 'warmup_accounts' view.
+
+        Args:
+            limit (int): The maximum number of accounts to fetch.
+
+        Returns:
+            list: A list of dictionaries, where each dictionary contains the
+                  email and password for an account. Returns an empty list on error.
+        """
+        try:
+            base_id = os.getenv("IG_ARMY_BASE_ID")
+            table_id = os.getenv("IG_ARMY_ACCS_TABLE_ID")
+
+            if not all([base_id, table_id]):
+                raise ValueError(
+                    "Missing IG_ARMY_BASE_ID or IG_ARMY_ACCS_TABLE_ID in .env file"
+                )
+
+            logger.info(
+                f"📡 Fetching up to {limit} warmup account credentials from Base: {base_id}, Table: {table_id}"
+            )
+
+            table = self.api.table(base_id, table_id)
+            fields_to_fetch = ["Email", "Email Password"]
+
+            # Fetch multiple records up to the specified limit
+            records = table.all(fields=fields_to_fetch, max_records=limit)
+
+            if not records:
+                logger.warning(
+                    "⚠️ No accounts found in the 'Warmup' view to fetch credentials from."
+                )
+                return []
+
+            credentials_list = []
+            for record in records:
+                record_fields = record.get("fields", {})
+                email_address = record_fields.get("Email")
+                email_password = record_fields.get("Email Password")
+
+                if not email_address or not email_password:
+                    logger.warning(
+                        f"Skipping record {record.get('id')} due to missing 'Email' or 'Email Password' field."
+                    )
+                    continue
+
+                credentials_list.append(
+                    {"email": email_address, "password": email_password}
+                )
+
+            logger.info(f"✅ Found credentials for {len(credentials_list)} accounts.")
+            return credentials_list
+
+        except Exception as e:
+            logger.error(
+                f"❌ An error occurred while fetching bulk warmup account credentials: {e}",
+                exc_info=True,
+            )
+            return []
+
+
+# ... (rest of the file) ...
+
+
 if __name__ == "__main__":
-    from Shared.airtable_manager import AirtableClient
     import os
+
+    from Shared.airtable_manager import AirtableClient
 
     logger.info("🔍 Testing get_single_active_account()...")
 
@@ -229,16 +385,13 @@ if __name__ == "__main__":
 
     airtable_client = AirtableClient()
     result = airtable_client.get_single_active_account(
-        base_id=base_id,
-        table_name=table_name,
-        unused_view_id=unused_view_id
+        base_id=base_id, table_name=table_name, unused_view_id=unused_view_id
     )
 
     if result:
         print("✅ Record fetched successfully:")
-        print("Record ID:", result['id'])
-        for key, value in result['fields'].items():
+        print("Record ID:", result["id"])
+        for key, value in result["fields"].items():
             print(f"  {key}: {value}")
     else:
         print("❌ No account returned.")
-

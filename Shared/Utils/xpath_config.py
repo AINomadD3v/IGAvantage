@@ -1,10 +1,16 @@
 # xpath_config.py
 
 
+# Shared/Utils/xpath_config.py
+
+
 class InstagramXPaths:
-    def __init__(self, package_name="com.instagram.androie"):
+    def __init__(
+        self, package_name="com.instagram.androie"
+    ):  # Corrected your default here if it was a typo
         self.package_name = package_name
 
+    # --- START: Existing XPaths from your provided class ---
     @property
     def creation_tab(self):
         return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/creation_tab']"
@@ -14,7 +20,7 @@ class InstagramXPaths:
         return f"//android.widget.TextView[@resource-id='{self.package_name}:id/gallery_folder_menu_tv']"
 
     @property
-    def next_button(self):
+    def next_button(self):  # General Next button
         return f'//android.widget.Button[@content-desc="Next"]'
 
     @property
@@ -38,7 +44,7 @@ class InstagramXPaths:
         return f"//android.widget.Button[@resource-id='{self.package_name}:id/share_footer_button']"
 
     @property
-    def reels_share_button(self):
+    def reels_share_button(self):  # Final Share button for Reels
         return f"//android.widget.Button[@content-desc='Share']"
 
     @property
@@ -87,7 +93,7 @@ class InstagramXPaths:
         return f"//android.view.View[@content-desc='Terms and Privacy Policy']"
 
     @property
-    def add_sound(self):
+    def add_sound(self):  # This is likely the "Add audio" button on the main edit page
         return f'//android.widget.Button[@content-desc="Add audio"]'
 
     @property
@@ -99,7 +105,7 @@ class InstagramXPaths:
         return f"//android.view.ViewGroup[@resource-id='{self.package_name}:id/track_container']"
 
     @property
-    def click_done(self):
+    def click_done(self):  # General Done button, context is important
         return f"//android.widget.Button[@content-desc='Done']"
 
     @property
@@ -116,271 +122,156 @@ class InstagramXPaths:
 
     @property
     def click_select_song(self):
-        """The click_select_song property."""
         return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/select_button_tap_target']"
 
     @property
     def new_password_entry_field(self):
         return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/layout_container_main']/android.widget.FrameLayout/android.widget.FrameLayout[2]/android.widget.FrameLayout[1]/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup/android.view.ViewGroup[2]/android.view.ViewGroup/android.widget.EditText"
 
-    # --- Elements for Post2FAHandler ---
-
-    # --- _handle_save_login_prompt Buttons ---
-    # These are for the buttons that might appear on the "Save your login info?" or similar prompt
-    # after 2FA or initial login.
-
     @property
     def post_login_save_button_text_en(self):
-        """'Save' button, typically English."""
         return '//android.widget.Button[contains(@text, "Save") or contains(@content-desc, "Save")]'
 
     @property
     def post_login_save_button_text_pl(self):
-        """'Zapisz' (Save) button, typically Polish."""
         return '//android.widget.Button[contains(@text, "Zapisz") or contains(@content-desc, "Zapisz")]'
 
     @property
     def post_login_not_now_button_text_en(self):
-        """'Not now' button, typically English."""
         return '//android.widget.Button[contains(@text, "Not now") or contains(@content-desc, "Not now")]'
 
     @property
     def post_login_not_now_button_text_pl(self):
-        """'Nie teraz' (Not now) button, typically Polish."""
         return '//android.widget.Button[contains(@text, "Nie teraz") or contains(@content-desc, "Nie teraz")]'
-
-    # --- _handle_setup_prompt Elements ---
 
     @property
     def setup_on_new_device_prompt_smart(self):
-        """Smart search for 'Set up on new device' prompt text."""
         return "%Set up on new device%"
 
     @property
     def skip_button_smart(self):
-        """Smart search for 'Skip' button, often on setup prompts."""
-        return "^Skip"  # Matches content-desc or text starting with "Skip"
-
-    # --- _finalize_login_check Elements (some may be duplicates from login_handler) ---
-
-    # @property
-    # def home_your_story_text(self):
-    #     """TextView element for 'Your story' on the home feed."""
-    #     return '//android.widget.TextView[@text="Your story"]' # Already defined
-
-    # def home_user_story_button(self, username: str) -> str:
-    #     """Button element for the specific user's story on the home feed."""
-    #     return f"//android.widget.Button[contains(@content-desc, \"{username}'s story\")]" # Already defined
-
-    # def home_user_story_image(self, username: str) -> str:
-    #     """ImageView element for the specific user's story on the home feed."""
-    #     return f"//android.widget.ImageView[contains(@content-desc, \"{username}'s story\")]" # Already defined
-
-    # @property
-    # def account_suspended_text_smart(self):
-    #     """Smart search for the 'We suspended your account' text."""
-    #     return "%We suspended your account%" # Already defined
-
-    # --- Login Screen Elements ---
+        return "^Skip"
 
     @property
     def login_username_label_smart(self):
-        """Smart search for the username field label."""
         return "^Username, email or mobile number"
 
     @property
     def login_password_label_smart(self):
-        """Smart search for the password field label."""
         return "^Password"
 
     @property
     def login_edittext_field_generic(self):
-        """Generic XPath for EditText fields on the login screen.
-        NOTE: Relies on index (0 for username, 1 for password) in the original script.
-              Finding specific resource-ids is more robust if possible.
-        """
         return "//android.widget.EditText"
 
     @property
     def login_show_password_button(self):
-        """Button to toggle password visibility."""
         return '//android.widget.Button[@content-desc="Show password"]'
 
     @property
     def login_button(self):
-        """The main 'Log in' button."""
         return '//android.widget.Button[@content-desc="Log in"]'
-
-    # --- Post-Login State Detection Elements ---
-
-    # --- 2FA / Verification Indicators ---
 
     @property
     def two_fa_check_email_text_view(self):
-        """TextView indicating user should check their email for a code."""
         return '//android.widget.TextView[contains(@text, "check your email")]'
 
     @property
     def two_fa_prompt_view_desc(self):
-        """View element with content description for 'Check your email' prompt."""
         return '//android.view.View[@content-desc="Check your email"]'
 
     @property
     def two_fa_code_input_field(self):
-        """Generic EditText field likely used for entering the 2FA code."""
-        # NOTE: Same generic XPath as login_edittext_field_generic. Consider refining if possible.
         return "//android.widget.EditText"
-
-    # --- Login Success Indicators / Prompts ---
 
     @property
     def save_login_info_prompt_smart(self):
-        """Smart search for 'Save your login info?' prompt text."""
         return "^Save your login info%"
 
     @property
-    def save_login_info_prompt_view(self):
-        """View element with content description for 'Save your login info?' prompt."""
-        # Note: This might be redundant with the smart search version above. Choose the most reliable.
-        return '//android.view.View[@content-desc="Save your login info?"]'
-
-    @property
     def save_login_info_save_button(self):
-        """The 'Save' button on the 'Save your login info?' prompt."""
         return '//android.widget.Button[@content-desc="Save"]'
 
     @property
     def turn_on_notifications_prompt_smart(self):
-        """Smart search for 'Turn on notifications' prompt text."""
         return "%Turn on notifications%"
 
     @property
     def home_your_story_text(self):
-        """TextView element for 'Your story' on the home feed."""
         return '//android.widget.TextView[@text="Your story"]'
 
-    # --- Dynamic Methods for User-Specific Elements ---
-
     def home_user_story_button(self, username: str) -> str:
-        """Button element for the specific user's story on the home feed."""
-        # Escapes the single quote within the f-string for XPath compatibility
         return (
-            f'//android.widget.Button[contains(@content-desc, "{username}\'s story")]'
+            f'//android.widget.Button[contains(@content-desc, "{username}\\\'s story")]'
         )
 
     def home_user_story_image(self, username: str) -> str:
-        """ImageView element for the specific user's story on the home feed."""
-        # Escapes the single quote within the f-string for XPath compatibility
-        return f'//android.widget.ImageView[contains(@content-desc, "{username}\'s story")]'
-
-    # --- Error / Issue Indicators ---
+        return f'//android.widget.ImageView[contains(@content-desc, "{username}\\\'s story")]'
 
     @property
     def login_incorrect_password_text_view(self):
-        """TextView displaying the 'Incorrect Password' error message."""
         return '//android.widget.TextView[@text="Incorrect Password"]'
 
     @property
     def login_incorrect_password_ok_button(self):
-        """The 'OK' button on the 'Incorrect Password' error popup."""
         return '//android.widget.Button[@text="OK"]'
 
     @property
     def account_suspended_text_smart(self):
-        """Smart search for the 'We suspended your account' text."""
-        # Note: This XPath is also defined in the default popup_config.json for watcher handling.
         return "%We suspended your account%"
-
-    # === End InstagramXPaths additions ===
-
-    # --- XPaths from instagram_actions.py ---
 
     @property
     def create_post_general_button(self):
-        # Was: "//*[contains(@content-desc, 'Create')]"
-        # In: InstagramInteractions.new_post
         return "//*[contains(@content-desc, 'Create')]"
 
     @property
     def gallery_grid_container(self):
-        # Was: grid_xpath = "//android.widget.GridView[contains(@resource-id, 'gallery_recycler_view')]/android.view.ViewGroup"
-        # In: InstagramInteractions.select_first_video
         return "//android.widget.GridView[contains(@resource-id, 'gallery_recycler_view')]/android.view.ViewGroup"
 
     @property
     def gallery_loaded_video_thumbnail_sub_xpath(self):
-        # Was: loaded_thumb_xpath = ".//android.view.View[contains(@resource-id, 'gallery_grid_item_thumbnail') and starts-with(@content-desc, 'Video thumbnail')]"
-        # In: InstagramInteractions.select_first_video
-        # Usage: parent_element.xpath(self.gallery_loaded_video_thumbnail_sub_xpath)
         return ".//android.view.View[contains(@resource-id, 'gallery_grid_item_thumbnail') and starts-with(@content-desc, 'Video thumbnail')]"
 
     @property
     def reel_viewer_insights_pill(self):
-        # Was: insights_xpath = "//android.view.ViewGroup[contains(@resource-id, 'clips_viewer_insights_pill')]"
-        # In: InstagramInteractions.wait_for_posted_caption
-        return "//android.view.ViewGroup[contains(@resource-id, 'clips_viewer_insights_pill')]"
+        return f"//android.view.ViewGroup[contains(@resource-id, '{self.package_name}:id/clips_viewer_insights_pill')]"  # Added package name
 
-    # For SoundAdder.add_music_to_reel and post_reel.py for device.xpath("Add audio")
-    # Note: Your existing 'add_sound' property is '//android.widget.Button[@content-desc="Add audio"]'
-    # This new one is for the more flexible text or content-desc search.
     @property
     def add_audio_text_or_desc_general(self):
-        # Replaces device.xpath("Add audio")
         return (
             "//*[contains(@text, 'Add audio') or contains(@content-desc, 'Add audio')]"
         )
 
     @property
     def trending_text_or_desc_general(self):
-        # Replaces device.xpath("Trending") in SoundAdder.add_music_to_reel
         return "//*[contains(@text, 'Trending') or contains(@content-desc, 'Trending')]"
 
     @property
     def audio_bottom_sheet_drag_handle_rids(self):
-        # Was: possible_ids = ["bottom_sheet_drag_handle_prism", "bottom_sheet_drag_handle"]
-        # In: SoundAdder.add_music_to_reel (used to construct XPaths like //*[contains(@resource-id, '{rid}')])
-        # This property returns the list of ID parts directly.
         return ["bottom_sheet_drag_handle_prism", "bottom_sheet_drag_handle"]
 
     @property
     def audio_tracks_list_general(self):
-        # Was: "//*[contains(@resource-id, 'content_list') or contains(@resource-id, 'preview_items')]"
-        # In: SoundAdder.add_music_to_reel
-        # This is an alternative/more general version than your existing 'tracks_list'.
         return "//*[contains(@resource-id, 'content_list') or contains(@resource-id, 'preview_items')]"
 
     @property
     def audio_track_container_general(self):
-        # Was: "//*[contains(@resource-id, 'track_container')]"
-        # In: SoundAdder.add_music_to_reel
-        # This is an alternative/more general version than your existing 'track_container'.
         return "//*[contains(@resource-id, 'track_container')]"
 
     @property
     def audio_select_song_button_general(self):
-        # Was: "//*[contains(@resource-id, 'select_button_tap_target')]"
-        # In: SoundAdder.add_music_to_reel
-        # This is an alternative/more general version than your existing 'click_select_song'.
         return "//*[contains(@resource-id, 'select_button_tap_target')]"
 
     @property
     def audio_scrubber_view(self):
-        # Was: scrubber_xpath = "//*[contains(@resource-id, 'scrubber_recycler_view')]"
-        # In: SoundAdder.add_music_to_reel and SoundAdder.scrub_music
         return "//*[contains(@resource-id, 'scrubber_recycler_view')]"
-
-    # --- XPaths from post_reel.py ---
 
     @property
     def home_feed_ready_identifier(self):
-        # Was: expected_xpath = '//android.widget.Button[@content-desc="Instagram Home Feed"]'
-        # In: post_reel (for wait_for_app_ready)
         return '//android.widget.Button[@content-desc="Instagram Home Feed"]'
 
     @property
     def reel_creation_tab_general(self):
-        # Replaces device.xpath("REEL") in post_reel.py
-        # Note: Your existing 'reel_button' is '//android.widget.Button[@content-desc="Reel"]'
         return "//*[contains(@text, 'REEL') or contains(@content-desc, 'REEL')]"
 
     @property
@@ -389,9 +280,6 @@ class InstagramXPaths:
 
     @property
     def final_share_or_next_button(self):
-        # Was: xpath = "//*[contains(@text, 'Next') or contains(@content-desc, 'Next') or contains(@content-desc, 'Share')]"
-        # In: post_reel (for final sharing click)
-        # Note: Your 'next_button' and 'reels_share_button' are more specific. This is for the combined case.
         return "//*[contains(@text, 'Next') or contains(@content-desc, 'Next') or contains(@content-desc, 'Share')]"
 
     @property
@@ -400,109 +288,331 @@ class InstagramXPaths:
 
     @property
     def search_layout_container_frame(self):
-        """General FrameLayout often containing search results/posts."""
-        # From extract_search_page_reels
         return "//android.widget.FrameLayout"
 
     @property
     def search_layout_container_rid_pattern(self):
-        """Regex pattern for resource-id of layout containers on search/explore. Use with caution."""
-        # From extract_search_page_reels - This was used with device.xpath(pattern) directly.
-        # It's better to find a more specific, non-regex selector if possible.
-        # Keeping it here for reference, but using it might require direct device.xpath().
         return "^.*layout_container$"
 
     @property
     def search_image_post_button(self):
-        """Relative XPath for buttons within a search result container (used to detect image posts)."""
-        # From extract_search_page_reels - Note the leading '.' for relative search
         return ".//android.widget.Button"
 
     @property
     def search_reel_imageview(self):
-        """Relative XPath for ImageViews within a search result container (used to find reels)."""
-        # From extract_search_page_reels - Note the leading '.'
         return ".//android.widget.ImageView"
 
     @property
     def search_reel_imageview_template(self):
-        """
-        Template for finding a specific reel ImageView on the search page using its content description.
-        Use as: self.xpath_config.search_reel_imageview_template.format(reel_description)
-        """
-        # From process_reel (used to tap the specific reel)
         return '//android.widget.ImageView[@content-desc="{}"]'
 
     @property
     def reel_profile_picture_desc_contains(self):
-        """ImageView containing the profile picture and username in the reel view."""
-        # From process_reel
         return (
             '//android.widget.ImageView[contains(@content-desc, "Profile picture of")]'
         )
 
     @property
     def reel_caption_container(self):
-        """ViewGroup containing the caption text in the reel view."""
-        # From process_reel - Uses package_name
         return f'//android.view.ViewGroup[@resource-id="{self.package_name}:id/clips_caption_component"]//android.view.ViewGroup[contains(@content-desc, "")]'
 
     @property
     def reel_likes_button_desc(self):
-        """ViewGroup associated with the likes count/button in the reel view."""
-        # From process_reel
         return '//android.view.ViewGroup[contains(@content-desc, "View likes")]'
 
     @property
     def reel_reshare_button_desc(self):
-        """ViewGroup associated with the reshare count/button in the reel view."""
-        # From process_reel
         return '//android.view.ViewGroup[contains(@content-desc, "Reshare number")]'
 
     @property
     def reel_audio_link_desc_contains(self):
-        """ViewGroup containing the audio link/name in the reel view."""
-        # From process_reel
         return '//android.view.ViewGroup[contains(@content-desc, "Original audio")]'
 
     @property
     def reel_follow_button_text(self):
-        """The 'Follow' button sometimes visible in the reel view."""
-        # From process_reel
         return '//android.widget.Button[@text="Follow"]'
 
     @property
     def reel_like_or_unlike_button_desc(self):
-        """Selector matching either the 'Like' or 'Unlike' button description in the reel view."""
-        # Used for verifying exit from reel view in process_reel/navigate_back_from_subscreen
-        # Assumes like_button_desc and unlike_button_desc are also defined for specific actions.
         return '//*[@content-desc="Like" or @content-desc="Unlike"]'
-
-    # Note: explore_search_bar_rid and explore_tab_desc were likely defined previously
-    # when integrating navigate_to_explore. Ensure they exist.
-    # @property
-    # def explore_search_bar_rid(self):
-    #     """Resource ID pattern for the search bar on the Explore page."""
-    #     # From perform_keyword_search
-    #     return "//*[contains(@resource-id, 'action_bar_search_edit_text')]"
-    #
-    # @property
-    # def explore_tab_desc(self):
-    #     """Content description for the Search/Explore tab."""
-    #     # From run_warmup_session (used in open_app readiness check)
-    #     return '//android.widget.FrameLayout[@content-desc="Search and explore"]'
 
     @property
     def search_posts_section_title(self):
-        """The 'Posts' title text view appearing in search results."""
-        # From perform_keyword_search - Uses package_name
         return f'//*[@resource-id="{self.package_name}:id/title_text_view" and @text="Posts"]'
 
     @property
     def search_results_recycler_view(self):
-        """The RecyclerView likely containing search results (posts/reels)."""
-        # From perform_keyword_search
         return "//*[contains(@resource-id, 'recycler_view')]"
+
+    # --- END: Existing XPaths from your provided class ---
+
+    # --- START: NEW XPaths specific to Reel Editing Flow (based on your list) ---
+    @property
+    def reel_edit_creation_toolbar_recyclerview(self):
+        """The main toolbar on the reel editing page containing icons for various tools."""
+        return f"//androidx.recyclerview.widget.RecyclerView[@resource-id='{self.package_name}:id/creation_toolbar_recyclerview']"
+
+    @property
+    def reel_edit_toolbar_add_audio_button(
+        self,
+    ):  # Specifically for toolbar context, if different from general 'add_sound'
+        """'Add audio' button within the creation_toolbar_recyclerview."""
+        # This is often identified by its content-desc within the toolbar.
+        return f"//android.widget.LinearLayout[@content-desc='Add audio']"  # As per your list
+
+    @property
+    def reel_edit_initial_add_text_button(self):
+        """The initial button to click to start adding text (e.g., 'Aa' icon or text)."""
+        # Based on your flow "We click add text" - assuming a primary button for this.
+        # Your list doesn't have a direct one, I'll use the common TextView version.
+        return "//android.widget.TextView[@content-desc='Add text']"  # Verify this element type and desc
+
+    @property
+    def reel_edit_text_input_field_focused(self):
+        """The EditText field that is focused and ready for text input after clicking 'Add Text'."""
+        # This is crucial but often lacks a unique static ID. @focused='true' is a good strategy.
+        # return f"//android.widget.EditText[@focused='true']"
+        # Or if it's always the only EditText within a specific container:
+        return f"//android.widget.EditText"  # Generic, assuming it's the one active after "Add Text"
+
+    @property
+    def reel_edit_text_tool_menu_group(self):
+        """The LinearLayout group containing buttons for font, color, animation, etc., for the text tool."""
+        return f"//android.widget.LinearLayout[@resource-id='{self.package_name}:id/postcapture_text_tool_menu_button_group']"
+
+    @property
+    def reel_edit_text_font_category_button(self):
+        """Button within text tool menu to open font styles (e.g., an 'A' icon)."""
+        # This would be a child of reel_edit_text_tool_menu_group.
+        # You need to inspect its actual type (e.g., ImageView) and content-desc or index.
+        # Example: return f"{self.reel_edit_text_tool_menu_group}/android.widget.ImageView[@content-desc='Font style']"
+        # For now, assuming a generic first clickable element if no specific desc:
+        return f"({self.reel_edit_text_tool_menu_group}//android.widget.ImageView)[1]"  # Placeholder: First ImageView
+
+    @property
+    def reel_edit_text_font_styles_scrollable(self):
+        """The scrollable container (e.g., HorizontalScrollView) holding individual font style previews."""
+        # This is where font names like "Typewriter", "Classic" are listed and swiped.
+        # Needs to be identified by inspecting the UI when font styles are visible.
+        # Example: return f"//android.widget.HorizontalScrollView[contains(@resource-id,'font_picker')]"
+        return f"//android.widget.HorizontalScrollView"  # Placeholder: a generic scroll view, needs to be specific
+
+    @property
+    def reel_edit_text_font_stroke_width_tool(self):
+        """Button or View for 'Stroke width tool' (font size/style adjustment)."""
+        return f"//android.view.View[@content-desc='Stroke width tool']"
+
+    @property
+    def reel_edit_text_color_category_button(self):
+        """Button within text tool menu to open color picker."""
+        # Similar to font_category_button, needs inspection.
+        # Example: return f"{self.reel_edit_text_tool_menu_group}/android.widget.ImageView[@content-desc='Color']"
+        return f"({self.reel_edit_text_tool_menu_group}//android.widget.ImageView)[2]"  # Placeholder: Second ImageView
+
+    def reel_edit_text_color_option(self, color_name: str):
+        """Template for a specific color option button, e.g., 'Black color'."""
+        return f"//android.view.View[@content-desc='{color_name} color']"
+
+    @property
+    def reel_edit_text_animation_icon(
+        self,
+    ):  # This is the icon to open the animations panel
+        """ImageView icon that opens the text animation selection panel."""
+        return f"//android.widget.ImageView[@content-desc='Text animation']"
+
+    @property
+    def reel_edit_text_animation_picker_recyclerview(self):
+        """RecyclerView that lists available text animations."""
+        return f"//androidx.recyclerview.widget.RecyclerView[@resource-id='{self.package_name}:id/text_tool_animation_picker_recycler_view']"
+
+    def reel_edit_text_animation_style_button(self, animation_name: str):
+        """Template for a button representing a specific text animation style."""
+        return f"//android.widget.Button[@content-desc='{animation_name} text animation style']"
+
+    @property
+    def reel_edit_text_background_effect_category_button(self):
+        """Button within text tool menu to open text background effects (your "Text Effect")."""
+        # Example: return f"{self.reel_edit_text_tool_menu_group}/android.widget.ImageView[@content-desc='Background Effect']"
+        return f"({self.reel_edit_text_tool_menu_group}//android.widget.ImageView)[3]"  # Placeholder: Third ImageView
+
+    @property
+    def reel_edit_text_effect_picker_recyclerview(self):  # Your "Text Effect" list
+        """RecyclerView that lists available text background effects."""
+        return f"//androidx.recyclerview.widget.RecyclerView[@resource-id='{self.package_name}:id/text_tool_effect_picker_recycler_view']"
+
+    @property
+    def reel_edit_text_no_effect_button(self):
+        """Button for 'No text effect style' (for text background effects)."""
+        return f"//android.widget.Button[@content-desc='No text effect style']"
+
+    def reel_edit_text_effect_style_button(self, effect_name: str):
+        """Template for a button representing a specific text background effect style."""
+        return (
+            f"//android.widget.Button[@content-desc='{effect_name} text effect style']"
+        )
+
+    def reel_edit_text_alignment_button(self, alignment: str = "center"):
+        """Template for the text alignment button (e.g., 'Text alignment center')."""
+        return f"//android.widget.ImageView[@content-desc='Text alignment {alignment}']"
+
+    @property
+    def reel_edit_text_tool_done_button(self):
+        """The 'Done' button within the text editing tool to apply text and close the tool."""
+        # Your list has: //android.widget.Button[@content-desc="Done"]
+        # This is distinct from the general 'click_done' or 'reel_tag_people_done_button'
+        return f"//android.widget.Button[@content-desc='Done' and ancestor::*[@resource-id='{self.package_name}:id/postcapture_text_tool_menu_button_group']]"  # More specific if possible
+        # If the simple content-desc is unique enough when text tool is active:
+        # return f"//android.widget.Button[@content-desc='Done']" # As per your list, assuming context makes it unique
+
+    @property
+    def reel_edit_page_next_button(self):
+        """The main 'Next' button on the reel editing page to proceed to the share/caption screen."""
+        # Your list implies "Then click next" after all text edits are done and its specific "Done" is clicked.
+        # This should be the same as your general 'next_button' if its content-desc is "Next".
+        return f'//android.widget.Button[@content-desc="Next"]'
+
+    # --- Stickers ---
+    @property
+    def reel_edit_add_sticker_button(self):
+        """Button to add a sticker to the reel."""
+        return f"//android.widget.Button[@content-desc='Add sticker']"
+
+    @property
+    def reel_edit_sticker_asset_picker_container(self):
+        """The main FrameLayout container for the sticker picker/tray."""
+        # Your list has: /android.widget.FrameLayout[@resource-id="...:id/asset_picker_container"]
+        # Using // for more robustness:
+        return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/asset_picker_container']"
+
+    @property
+    def reel_edit_sticker_asset_picker(self):
+        """LinearLayout representing the asset picker itself within the container."""
+        return f"//android.widget.LinearLayout[@resource-id='{self.package_name}:id/asset_picker']"
+
+    @property
+    def reel_edit_sticker_items_container(self):
+        """FrameLayout containing the actual sticker items/previews."""
+        return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/asset_items_container']"
+
+    @property
+    def reel_edit_sticker_drag_chevron(self):
+        """ImageView for the drag chevron, possibly for sticker tray interaction."""
+        return f"//android.widget.ImageView[@resource-id='{self.package_name}:id/drag_chevron']"
+
+    @property
+    def reel_edit_sticker_search_bar_edittext(
+        self,
+    ):  # Changed to target EditText directly
+        """The EditText field within the sticker search bar container."""
+        return f"//android.widget.LinearLayout[@resource-id='{self.package_name}:id/search_bar_container']//android.widget.EditText"
+
+    @property
+    def reel_edit_sticker_list_recyclerview(self):
+        """The RecyclerView for sticker lists (often with resource-id 'list')."""
+        return f"//androidx.recyclerview.widget.RecyclerView[@resource-id='{self.package_name}:id/list']"
+
+    def reel_edit_sticker_list_item_by_index(
+        self, index: int
+    ):  # XPath indices are 1-based
+        """Gets a sticker list item (LinearLayout) by its 1-based index from reel_edit_sticker_list_recyclerview."""
+        return f"({self.reel_edit_sticker_list_recyclerview}/android.widget.LinearLayout)[{index}]"
+
+    # --- Main Video Effects ---
+    @property
+    def reel_edit_effects_button(self):
+        """Main 'Effects' button on the reel editing screen for video effects."""
+        return f"//android.widget.Button[@content-desc='Effects']"
+
+    @property
+    def reel_edit_effect_apply_no_effect_button(self):
+        """Button to apply 'No effect' for video effects."""
+        return f"//android.widget.Button[@content-desc='Apply effect No effect']"
+
+    @property
+    def reel_edit_effects_gridview(self):
+        """GridView containing video effect previews."""
+        return f"//android.widget.GridView[@resource-id='{self.package_name}:id/camera_effect_preview_video_recycler_view']"
+
+    def reel_edit_effect_apply_button_by_name(self, effect_name: str):
+        """Template for a specific video effect button, e.g., 'Apply effect Cinematic 𝐇𝐃'."""
+        return f"//android.widget.Button[@content-desc='Apply effect {effect_name}']"
+
+    @property
+    def reel_edit_effects_bottom_sheet_drag_handle(self):
+        """Drag handle (prism) to close the video effects menu/bottom sheet."""
+        return f"//android.widget.ImageView[@resource-id='{self.package_name}:id/bottom_sheet_drag_handle_prism']"
+
+    # --- Caption Page Add-ons (Hashtags, Poll) ---
+    @property
+    def reel_caption_page_add_ons_recyclerview(self):
+        """RecyclerView on the caption/share page for add-ons like Hashtags, Poll."""
+        return f"//androidx.recyclerview.widget.RecyclerView[@resource-id='{self.package_name}:id/caption_add_on_recyclerview']"
+
+    @property
+    def reel_caption_page_hashtags_button(self):
+        """Hashtags button on the caption page (first LinearLayout in add_ons_recyclerview)."""
+        return f"{self.reel_caption_page_add_ons_recyclerview}/android.widget.LinearLayout[1]"
+
+    @property
+    def reel_caption_page_poll_button(self):
+        """Poll button on the caption page (second LinearLayout in add_ons_recyclerview)."""
+        return f"{self.reel_caption_page_add_ons_recyclerview}/android.widget.LinearLayout[2]"
+
+    # --- Tag People ---
+    @property
+    def reel_edit_tag_people_button(self):  # Changed from _from_toolbar for clarity
+        """The 'Tag people' button on the main reel editing screen."""
+        # Prioritizing the more specific text-based XPath from your list:
+        return f"//android.widget.TextView[@resource-id='{self.package_name}:id/title' and @text='Tag people']"
+        # Fallback from your list (less robust):
+        # return f"//android.widget.LinearLayout[@resource-id='{self.package_name}:id/content_view']/android.widget.Button[1]"
+
+    @property
+    def reel_tag_people_add_tag_button(self):
+        """Button to 'Add Tag' on the Tag People screen after clicking a user."""
+        return f"//android.widget.FrameLayout[@resource-id='{self.package_name}:id/add_people_tag_button']"
+
+    @property
+    def reel_tag_people_search_bar_edittext(self):
+        """EditText field for searching users to tag."""
+        return f"//android.widget.EditText[@content-desc='Search for a user']"
+
+    @property
+    def reel_tag_people_search_results_listview(self):
+        """ListView containing the search results when tagging people."""
+        return f"//android.widget.ListView[@resource-id='android:id/list']"  # Uses 'android' namespace
+
+    def reel_tag_people_search_result_user_container_by_index(
+        self, index: int
+    ):  # 1-based index for XPath
+        """A specific user container (Button) in tag search results by its 1-based index."""
+        return f"({self.reel_tag_people_search_results_listview}//android.widget.Button[@resource-id='{self.package_name}:id/row_search_user_container'])[{index}]"
+
+    def reel_tag_people_search_result_user_container_by_username(self, username: str):
+        """Finds a user container in tag search results by their exact username text."""
+        # Ensure username doesn't contain single quotes or escape them properly for XPath.
+        safe_username = username.replace("'", "\\'")
+        return f"{self.reel_tag_people_search_results_listview}//android.widget.Button[@resource-id='{self.package_name}:id/row_search_user_container' and .//android.widget.TextView[@resource-id='{self.package_name}:id/row_search_user_username' and @text='{safe_username}']]"
+
+    @property
+    def reel_tag_people_username_in_result(self):
+        """Relative XPath for the TextView containing the username within a search result item."""
+        return f".//android.widget.TextView[@resource-id='{self.package_name}:id/row_search_user_username']"
+
+    @property
+    def reel_tag_people_fullname_in_result(self):
+        """Relative XPath for the TextView containing the full name within a search result item."""
+        return f".//android.widget.TextView[@resource-id='{self.package_name}:id/row_search_user_fullname']"
+
+    @property
+    def reel_tag_people_done_button(self):
+        """The 'Done' button specifically for the Tag People screen."""
+        # Your list has: //android.widget.Button[@content-desc="Done"]
+        # This needs to be distinguished from other "Done" buttons if the content-desc is identical.
+        # Assuming context (being on the tag people screen) makes it unique, or a more specific parent exists.
+        return f"//android.widget.Button[@content-desc='Done']"  # As per your list, assuming context makes it unique
+
+    # --- END: NEW XPaths specific to Reel Editing Flow ---
 
 
 class FirefoxEmailXPaths:
