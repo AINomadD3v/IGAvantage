@@ -61,6 +61,16 @@ popups:
   - name: "firefox_color_popup" # Example non-IG
     text_xpath: "//*[contains(@text, 'Try a splash')]"
     button_xpath: "//*[contains(@content-desc, 'Close tab')]"
+  - name: "join_instagram"
+    text_xpath: "//*[contains(@content-desc, 'I already have an account')]"
+    button_xpath: "//*[contains(@content-desc, 'I already have an account')]"
+  - name: "old_android_version_warning"
+    text_xpath: "//*[@resource-id='android:id/message' and contains(@text, 'built for an older version')]"
+    button_xpath: "//*[@resource-id='android:id/button1']"
+  - name: "allow_notifications"
+    text_xpath: "//*[contains(@text, 'send you notifications')]"
+    button_xpath: "//*[@resource-id='com.android.permissioncontroller:id/permission_allow_button']"
+
 
   # --- Popups previously hardcoded in popup_handler.py ---
   - name: "photo_removed_popup"

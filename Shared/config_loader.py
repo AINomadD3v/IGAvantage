@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 from dotenv import load_dotenv
 
-from .logger_config import setup_logger
+from Shared.Utils.logger_config import setup_logger
 
 logger = setup_logger(__name__)
 

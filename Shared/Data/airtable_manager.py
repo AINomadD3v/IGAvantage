@@ -8,13 +8,11 @@ import requests
 from dotenv import load_dotenv
 from pyairtable import Api
 
-from Shared.Utils.logger_config import setup_logger  # ✅
+from Shared.Utils.logger_config import setup_logger
 
 logger = setup_logger(__name__)
-# airtable_manager.py (top of file)
 
 # --- Load dotenv from project root ---
-# This works reliably regardless of where this file is called from
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 dotenv_path = os.path.join(project_root, ".env")
 if os.path.exists(dotenv_path):
@@ -76,7 +74,7 @@ class AirtableClient:
             records = table.all(view=self.view_name)
 
             bogota = pytz.timezone("America/Bogota")
-            today_str = datetime.now(bogota).strftime("%Y-%m-%d")  # e.g., '2025-04-05'
+            today_str = datetime.now(bogota).strftime("%Y-%m-%d")
 
             matching = []
 
@@ -86,10 +84,7 @@ class AirtableClient:
                 if not schedule_raw:
                     continue
 
-                # Airtable returns ISO format like '2025-04-06T00:00:00.000Z'
-                scheduled_date = schedule_raw.split("T")[
-                    0
-                ]  # Just the 'YYYY-MM-DD' part
+                scheduled_date = schedule_raw.split("T")[0]
 
                 if scheduled_date != today_str:
                     continue
@@ -248,8 +243,6 @@ class AirtableClient:
 
         return result
 
-    # airtable_manager.py
-
     def get_warmup_credentials(self):
         """
         Fetches email credentials for a single account from the 'warmup_accounts' view.
@@ -262,7 +255,7 @@ class AirtableClient:
 
             if not all([base_id, table_id]):
                 raise ValueError(
-                    "Missing IG_ARMY_BASE_ID or IG_ARMY_ACCOUNTS_TABLE_ID in .env file"
+                    "Missing IG_ARMY_BASE_ID or IG_ARMY_ACCS_TABLE_ID in .env file"
                 )
 
             logger.info(
@@ -302,9 +295,6 @@ class AirtableClient:
                 exc_info=True,
             )
             return None
-        # airtable_manager.py
-
-    # ... (existing AirtableClient class code) ...
 
     def get_warmup_credentials_bulk(self, limit: int = 10):
         """
@@ -368,30 +358,80 @@ class AirtableClient:
             )
             return []
 
+    # --- NEW FUNCTION ---
+    def fetch_unused_accounts(self, max_records: int = 5) -> list:
+        """
+        Fetches account credentials from the 'Unused Accounts' view.
 
-# ... (rest of the file) ...
+        Args:
+            max_records (int): The maximum number of accounts to fetch. Defaults to 5.
 
+        Returns:
+            list: A list of dictionaries, each containing the credentials for one account.
+                  Returns an empty list if no accounts are found or an error occurs.
+        """
+        try:
+            # Assumes the same Base and Table ID as the warmup accounts
+            base_id = os.getenv("IG_ARMY_BASE_ID")
+            table_id = os.getenv("IG_ARMY_ACCS_TABLE_ID")
+            view_name = "Unused Accounts"
 
-if __name__ == "__main__":
-    import os
+            if not all([base_id, table_id]):
+                raise ValueError(
+                    "Missing IG_ARMY_BASE_ID or IG_ARMY_ACCS_TABLE_ID in .env file"
+                )
 
-    from Shared.airtable_manager import AirtableClient
+            logger.info(
+                f"📡 Fetching up to {max_records} accounts from view '{view_name}'..."
+            )
+            logger.info(f"   Base: {base_id}, Table: {table_id}")
 
-    logger.info("🔍 Testing get_single_active_account()...")
+            table = self.api.table(base_id, table_id)
+            fields_to_fetch = ["Account", "Password", "Email", "Email Password"]
 
-    base_id = os.getenv("AIRTABLE_BASE_ID")
-    table_name = os.getenv("IG_ARMY_ACCOUNTS_TABLE_ID")
-    unused_view_id = os.getenv("IG_ARMY_UNUSED_VIEW_ID")
+            records = table.all(
+                view=view_name, fields=fields_to_fetch, max_records=max_records
+            )
 
-    airtable_client = AirtableClient()
-    result = airtable_client.get_single_active_account(
-        base_id=base_id, table_name=table_name, unused_view_id=unused_view_id
-    )
+            if not records:
+                logger.warning(f"⚠️ No accounts found in the '{view_name}' view.")
+                return []
 
-    if result:
-        print("✅ Record fetched successfully:")
-        print("Record ID:", result["id"])
-        for key, value in result["fields"].items():
-            print(f"  {key}: {value}")
-    else:
-        print("❌ No account returned.")
+            accounts_list = []
+            for record in records:
+                record_fields = record.get("fields", {})
+
+                # Extract all required credentials
+                ig_username = record_fields.get("Account")
+                ig_password = record_fields.get("Password")
+                email_address = record_fields.get("Email")
+                email_password = record_fields.get("Email Password")
+
+                # Ensure all four fields are present before adding
+                if not all([ig_username, ig_password, email_address, email_password]):
+                    logger.warning(
+                        f"Skipping record {record.get('id')} due to missing credentials."
+                    )
+                    continue
+
+                accounts_list.append(
+                    {
+                        "record_id": record.get("id"),
+                        "instagram_username": ig_username,
+                        "instagram_password": ig_password,
+                        "email_address": email_address,
+                        "email_password": email_password,
+                    }
+                )
+
+            logger.info(
+                f"✅ Successfully fetched credentials for {len(accounts_list)} accounts."
+            )
+            return accounts_list
+
+        except Exception as e:
+            logger.error(
+                f"❌ An error occurred while fetching unused accounts: {e}",
+                exc_info=True,
+            )
+            return []

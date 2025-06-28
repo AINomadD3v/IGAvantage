@@ -1,4 +1,4 @@
-# email_activator.py
+# activate_imap.py
 
 import re
 
