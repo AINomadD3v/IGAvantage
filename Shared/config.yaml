@@ -62,14 +62,21 @@ popups:
     text_xpath: "//*[contains(@text, 'Try a splash')]"
     button_xpath: "//*[contains(@content-desc, 'Close tab')]"
   - name: "join_instagram"
-    text_xpath: "//*[contains(@content-desc, 'I already have an account')]"
-    button_xpath: "//*[contains(@content-desc, 'I already have an account')]"
+    text_xpath: "//android.widget.Button[@content-desc='I already have an account']"
+    button_xpath: "//android.widget.Button[@content-desc='I already have an account']"
   - name: "old_android_version_warning"
     text_xpath: "//*[@resource-id='android:id/message' and contains(@text, 'built for an older version')]"
     button_xpath: "//*[@resource-id='android:id/button1']"
   - name: "allow_notifications"
     text_xpath: "//*[contains(@text, 'send you notifications')]"
     button_xpath: "//*[@resource-id='com.android.permissioncontroller:id/permission_allow_button']"
+  - name: "nordvpn_slow_connection"
+    text_xpath: "//*[@content-desc='Connecting…, It’s taking a bit longer than usual.']"
+    button_xpath: null
+    callback: "handle_vpn_slow_connection"
+  - name: "samsung_pass"
+    text_xpath: "//*[@resource-id='android:id/autofill_save_icon']"
+    button_xpath: "//*[@resource-id='android:id/autofill_save_no']"
 
 
   # --- Popups previously hardcoded in popup_handler.py ---
