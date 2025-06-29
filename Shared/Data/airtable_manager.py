@@ -387,7 +387,14 @@ class AirtableClient:
             logger.info(f"   Base: {base_id}, Table: {table_id}")
 
             table = self.api.table(base_id, table_id)
-            fields_to_fetch = ["Account", "Password", "Email", "Email Password"]
+            fields_to_fetch = [
+                "Account",
+                "Password",
+                "Email",
+                "Email Password",
+                "Package Name",
+                "Device ID",
+            ]
 
             records = table.all(
                 view=view_name, fields=fields_to_fetch, max_records=max_records
@@ -406,6 +413,8 @@ class AirtableClient:
                 ig_password = record_fields.get("Password")
                 email_address = record_fields.get("Email")
                 email_password = record_fields.get("Email Password")
+                package_name = record_fields.get("Package Name")
+                device_id = record_fields.get("Device ID")
 
                 # Ensure all four fields are present before adding
                 if not all([ig_username, ig_password, email_address, email_password]):
@@ -421,6 +430,8 @@ class AirtableClient:
                         "instagram_password": ig_password,
                         "email_address": email_address,
                         "email_password": email_password,
+                        "package_name": package_name,
+                        "device_id": device_id,
                     }
                 )
 

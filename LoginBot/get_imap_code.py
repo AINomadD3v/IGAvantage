@@ -158,7 +158,7 @@ def get_instagram_verification_code(
 
 if __name__ == "__main__":
     print("--- Running Standalone IMAP Test ---")
-    test_email = "augustinexiong@op.pl"
+    test_email = "elianestrada@onet.pl"
     test_password = "khan567996"
     print(
         "NOTE: This test will search for any matching Instagram email, read or unread."

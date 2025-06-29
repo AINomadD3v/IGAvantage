@@ -1,5 +1,3 @@
-# LoginBot/main_loginbot.py
-
 import os
 import sys
 import time
@@ -13,18 +11,12 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
 import json
-import os
 import threading
-import time
-from typing import Optional  # Added for type hinting
 
 import requests  # For the API-based approach
-import uiautomator2 as u2
 
-# REMOVED: from Shared.Utils.xpath_config import InstagramXPaths
+# --- Your existing imports ---
 from get_imap_code import get_instagram_verification_code
-
-# --- NEW VPN IMPORT ---
 from nord import main_flow as rotate_nordvpn_ip
 from PIL import Image
 
@@ -34,11 +26,7 @@ from Shared.instagram_actions import InstagramInteractions
 from Shared.Utils.logger_config import setup_logger
 from Shared.Utils.stealth_typing import StealthTyper
 
-logger = setup_logger(
-    name="PopupHandler"
-)  # Changed logger name slightly for consistency
-
-
+# --- Logger Setup ---
 module_logger = setup_logger(__name__)
 
 
@@ -54,11 +42,8 @@ class HardcodedXPaths:
 
         # --- Login Screen (as per user specification) ---
         self.login_page = f"//*[@content-desc='Forgot password?']"
-        # NOTE: Using advanced selectors exactly as provided.
-        # '^' indicates a regular expression match on text.
         self.login_username_smart = f"^Username, email or mobile number"
         self.login_password_smart = f"^Password"
-
         self.login_button = f"//android.widget.Button[@content-desc='Log in']"
         self.login_loading_indicator = (
             f"//android.widget.Button[@content-desc='Loading...']"
@@ -171,7 +156,6 @@ class InstagramLoginHandler:
         )
         return "unknown"
 
-    # --- MODIFIED: This entire method is updated with retry logic ---
     def handle_2fa(self, email_address: str, email_password: str) -> str:
         self.logger.info("--- Starting 2FA Handling Process ---")
 
@@ -183,24 +167,22 @@ class InstagramLoginHandler:
             self.logger.info(
                 f"Attempting to fetch 2FA code for '{email_address}'... (Attempt {attempt + 1}/{max_retries})"
             )
-            # Set debug=True to see verbose output from the IMAP function
             code = get_instagram_verification_code(
                 email_address, email_password, debug=True
             )
             if code:
                 self.logger.info("✅ Code found!")
                 verification_code = code
-                break  # Exit the loop if code is found
+                break
 
             self.logger.warning(
                 f"Code not found. Waiting {retry_delay} seconds before retrying..."
             )
             time.sleep(retry_delay)
 
-        # If code is still not found after all retries, try the API fallback
         if not verification_code:
             self.logger.warning(
-                "IMAP code retrieval failed after all retries. Calling activation API as a fallback..."
+                "IMAP code retrieval failed. Calling activation API as a fallback..."
             )
             API_URL = os.getenv(
                 "EMAIL_ACTIVATION_API_URL", "http://127.0.0.1:8000/activate-protocols"
@@ -216,7 +198,7 @@ class InstagramLoginHandler:
 
                 if activation_result.get("status") == "success":
                     self.logger.info(
-                        "Email protocols activation successful. Retrying code retrieval one last time..."
+                        "Email protocols activation successful. Retrying code retrieval..."
                     )
                     time.sleep(5)
                     verification_code = get_instagram_verification_code(
@@ -226,25 +208,18 @@ class InstagramLoginHandler:
                     self.logger.error(
                         f"API reported failure: {activation_result.get('message')}"
                     )
-                    # --- COMMENTED OUT ---
-                    # self._update_airtable_status(
-                    #     {"Status": "Login Failed - 2FA Email Activation Error"}
-                    # )
                     return "2fa_failed"
             except requests.exceptions.RequestException as e:
                 self.logger.error(f"Failed to call activation API at {API_URL}: {e}")
-                # --- COMMENTED OUT ---
-                # self._update_airtable_status({"Status": "Login Failed - 2FA API Error"})
                 return "2fa_failed"
 
         if verification_code:
             self.logger.info(f"✅ Successfully retrieved 2FA code: {verification_code}")
-
             code_input_xpath = self.xpaths.two_fa_code_input_field
             if not self.interactions.wait_for_element_appear(
                 code_input_xpath, timeout=10
             ):
-                self.logger.error("Could not find the 2FA code input field on screen.")
+                self.logger.error("Could not find the 2FA code input field.")
                 return "2fa_failed"
 
             self.logger.info("Entering the 6-digit code...")
@@ -273,19 +248,11 @@ class InstagramLoginHandler:
                 return "login_success"
             else:
                 self.logger.error(
-                    f"Login failed after submitting 2FA code. Final state: {final_state}"
+                    f"Login failed after submitting 2FA. Final state: {final_state}"
                 )
-                # --- COMMENTED OUT ---
-                # self._update_airtable_status(
-                #     {"Status": "Login Failed - 2FA Code Rejected"}
-                # )
                 return "2fa_failed"
         else:
             self.logger.error("❌ Failed to retrieve 2FA code after all attempts.")
-            # --- COMMENTED OUT ---
-            # self._update_airtable_status(
-            #     {"Status": "Login Failed - 2FA Code Not Found"}
-            # )
             return "2fa_failed"
 
     def _update_airtable_status(self, status_map: dict):
@@ -306,9 +273,7 @@ class InstagramLoginHandler:
             )
 
     def _wait_for_2fa_prompt_text(self, timeout=15, interval=0.5) -> bool:
-        self.logger.info(
-            "Performing robust check for 2FA screen using advanced XPath..."
-        )
+        self.logger.info("Performing robust check for 2FA screen...")
         xpath_expr = "//*[starts-with(@text, 'Enter the code')]"
         end_time = time.time() + timeout
         while time.time() < end_time:
@@ -330,37 +295,24 @@ class InstagramLoginHandler:
             self.logger.info(f"--- Starting Instagram Login for: {username} ---")
             self.current_username = username
 
-            # === Step 1: Wait for the login page using the specified anchor element ===
+            # Step 1: Wait for the login page
             self.logger.info("Waiting for the main login page to be visible...")
             if not self.interactions.wait_for_element_appear(
                 self.xpaths.login_page, timeout=20
             ):
-                self.logger.error(
-                    "❌ Timed out waiting for the login page identifier ('Forgot password?'). "
-                    "The app may be on an unexpected screen."
-                )
+                self.logger.error("❌ Timed out waiting for the login page.")
                 self.d.screenshot("login_page_not_found_error.png")
                 return "error"
-            self.logger.info(
-                "✅ Login page identified. Proceeding to enter credentials."
-            )
+            self.logger.info("✅ Login page identified.")
 
-            # === Step 2: Enter username using the specified advanced selector ===
+            # Step 2: Enter username
             self.logger.info("Entering username...")
             try:
-                username_selector = self.xpaths.login_username_smart
-                self.logger.debug(
-                    f"Attempting to find username field with selector: '{username_selector}'"
-                )
-                username_field = self.d.xpath(username_selector)
-
+                username_field = self.d.xpath(self.xpaths.login_username_smart)
                 if not username_field.wait(timeout=5):
-                    self.logger.error(
-                        f"❌ Username field not found with smart selector: '{username_selector}'"
-                    )
+                    self.logger.error("❌ Username field not found.")
                     self.d.screenshot("username_field_not_found_error.png")
                     return "error"
-
                 username_field.click()
                 time.sleep(0.5)
                 self.d.clear_text()
@@ -371,22 +323,14 @@ class InstagramLoginHandler:
                 self.d.screenshot("username_typing_error.png")
                 return "error"
 
-            # === Step 3: Enter password using the specified advanced selector ===
+            # Step 3: Enter password
             self.logger.info("Entering password...")
             try:
-                password_selector = self.xpaths.login_password_smart
-                self.logger.debug(
-                    f"Attempting to find password field with selector: '{password_selector}'"
-                )
-                password_field = self.d.xpath(password_selector)
-
+                password_field = self.d.xpath(self.xpaths.login_password_smart)
                 if not password_field.wait(timeout=5):
-                    self.logger.error(
-                        f"❌ Password field not found with smart selector: '{password_selector}'"
-                    )
+                    self.logger.error("❌ Password field not found.")
                     self.d.screenshot("password_field_not_found_error.png")
                     return "error"
-
                 password_field.click()
                 time.sleep(0.5)
                 self.d.clear_text()
@@ -397,131 +341,82 @@ class InstagramLoginHandler:
                 self.d.screenshot("password_typing_error.png")
                 return "error"
 
-            # === Step 4: Click Login button (logic remains the same) ===
+            # Step 4: Click Login
             if not self.interactions.click_if_exists(
                 self.xpaths.login_button, timeout=5
             ):
                 self.logger.error("Could not find or click the main login button.")
                 return "error"
 
-            self.logger.info(
-                "Login clicked. Now waiting for the loading process to complete."
-            )
+            self.logger.info("Login clicked. Waiting for loading to complete.")
             loading_indicator = self.d.xpath(self.xpaths.login_loading_indicator)
-
             if loading_indicator.wait(timeout=5):
-                self.logger.info(
-                    "✅ 'Loading...' indicator appeared. Waiting for it to disappear..."
-                )
-                if not loading_indicator.wait_gone(
-                    timeout=45
-                ):  # Increased timeout for slow networks
-                    self.logger.error(
-                        "❌ Loading indicator did not disappear within 45 seconds. Login may be stuck."
-                    )
+                self.logger.info("✅ 'Loading...' indicator appeared.")
+                if not loading_indicator.wait_gone(timeout=45):
+                    self.logger.error("❌ Loading indicator did not disappear.")
                     self.d.screenshot("login_stuck_on_loading.png")
                     return "error"
                 self.logger.info("✅ Loading process finished.")
             else:
-                self.logger.warning(
-                    "⚠️ Loading indicator did not appear. The page may have changed instantly or failed to start loading."
-                )
+                self.logger.warning("⚠️ Loading indicator did not appear.")
 
-            self.logger.info("Login loading complete, entering post-login checks...")
-
+            # Step 5: Post-login checks
+            self.logger.info("Entering post-login checks...")
             if self.interactions.wait_for_element_appear(
                 self.xpaths.login_incorrect_password_text_view, timeout=2
             ):
                 self.logger.warning("❌ Incorrect Password error detected!")
-                # --- COMMENTED OUT ---
-                # self._update_airtable_status({"Status": "Login Failed - Incorrect PW"})
+                self._update_airtable_status({"Status": "Login Failed - Incorrect PW"})
                 return "login_failed"
 
             if self._wait_for_2fa_prompt_text(timeout=5):
                 self.logger.info("✅ 2FA screen detected. Starting 2FA handler...")
-                tfa_result = self.handle_2fa(email_address, email_password)
-                if tfa_result == "login_success":
-                    self.logger.info("✅ Login successful after completing 2FA.")
-                    self._update_airtable_status(
-                        {"Logged In?": True, "Status": "Logged In - Active"}
-                    )
-                    return "login_success"
-                else:
-                    return "login_failed"
+                return self.handle_2fa(email_address, email_password)
 
-            self.logger.info(
-                "No immediate state found, starting general post-login state detection..."
-            )
             final_state = self.detect_post_login_state(username=username, timeout=20)
-
             if final_state == "login_success":
                 self.logger.info("✅ Login successful.")
-                # This is a success status, so we leave it active
                 self._update_airtable_status(
                     {"Logged In?": True, "Status": "Logged In - Active"}
                 )
                 return "login_success"
             elif final_state == "2fa_required":
-                self.logger.info(
-                    "🔑 2FA Required (detected by general poll). Initiating handler."
-                )
-                tfa_result = self.handle_2fa(email_address, email_password)
-                if tfa_result == "login_success":
-                    self.logger.info("✅ Login successful after completing 2FA.")
-                    # This is a success status, so we leave it active
-                    self._update_airtable_status(
-                        {"Logged In?": True, "Status": "Logged In - Active"}
-                    )
-                    return "login_success"
-                else:
-                    return "login_failed"
+                self.logger.info("🔑 2FA Required. Initiating handler.")
+                return self.handle_2fa(email_address, email_password)
             elif final_state == "account_suspended":
                 self.logger.warning("🚫 Account Suspended.")
-                # --- COMMENTED OUT ---
-                # self._update_airtable_status({"Status": "Banned"})
+                self._update_airtable_status({"Status": "Banned"})
                 return "account_banned"
             else:
-                self.logger.error(
-                    "❌ Login failed: Timeout or Unknown post-login state."
-                )
-                # --- COMMENTED OUT ---
-                # self._update_airtable_status({"Status": "Login Failed - Unknown State"})
+                self.logger.error("❌ Login failed: Timeout or Unknown state.")
+                self._update_airtable_status({"Status": "Login Failed - Unknown State"})
                 return "timeout_or_unknown"
 
         except Exception as e:
-            self.logger.error(
-                f"💥 Unexpected Error during login process: {e}", exc_info=True
-            )
-            # --- COMMENTED OUT ---
-            # self._update_airtable_status({"Status": f"Login Error: {type(e).__name__}"})
+            self.logger.error(f"💥 Unexpected Error during login: {e}", exc_info=True)
+            self._update_airtable_status({"Status": f"Login Error: {type(e).__name__}"})
             return "error"
 
 
 class PopupHandler:
-    """
-    Manages background UI watchers based on a JSON/YAML configuration.
-    This class initializes, registers, and runs watchers in a background thread
-    to handle dynamic popups during automation tasks.
-    """
+    """Manages background UI watchers to handle dynamic popups."""
 
     def __init__(self, driver: u2.Device):
         self.d = driver
         self.logger = setup_logger(self.__class__.__name__)
         self._watcher_thread = None
         self._watcher_stop_event = threading.Event()
-
         self.airtable_client = None
         self.record_id = None
         self.package_name = None
         self.base_id = None
         self.table_id = None
         self._suspension_handled = False
-
         self.config = get_popup_config()
         if self.config:
-            self.logger.info("Successfully loaded popup config via get_popup_config()")
+            self.logger.info("Successfully loaded popup config.")
         else:
-            self.logger.error("Failed to load popup config or config is empty.")
+            self.logger.error("Failed to load popup config.")
 
     def set_context(self, airtable_client, record_id, package_name, base_id, table_id):
         self.logger.debug(
@@ -540,9 +435,7 @@ class PopupHandler:
         w.reset()
 
         if not isinstance(self.config, list) or not self.config:
-            self.logger.warning(
-                "Popup config is empty or invalid. No watchers will be started."
-            )
+            self.logger.warning("Popup config invalid. No watchers will start.")
             return
 
         for entry in self.config:
@@ -552,14 +445,14 @@ class PopupHandler:
             callback_name = entry.get("callback")
 
             if not name or not text_xpath:
-                self.logger.warning(
-                    f"Skipping invalid entry (missing name or text_xpath): {entry}"
-                )
+                self.logger.warning(f"Skipping invalid entry: {entry}")
                 continue
 
             watcher = w(name).when(text_xpath)
 
+            # --- FIX APPLIED HERE ---
             if callback_name:
+                # Only call getattr if callback_name is not None
                 callback_method = getattr(self, callback_name, None)
                 if callable(callback_method):
                     self.logger.info(
@@ -578,22 +471,16 @@ class PopupHandler:
                     lambda selector, xpath=button_xpath: self.d.xpath(xpath).click()
                 )
             else:
-                self.logger.warning(
-                    f"Watcher '{name}' has no valid action (button_xpath or callback)."
-                )
+                self.logger.warning(f"Watcher '{name}' has no valid action.")
 
         if not w._watchers:
-            self.logger.info(
-                "No watchers were successfully registered. Loop will not start."
-            )
+            self.logger.info("No watchers registered. Loop will not start.")
             return
 
         self._watcher_stop_event.clear()
         self._watcher_thread = threading.Thread(target=self._watcher_loop, daemon=True)
         self._watcher_thread.start()
-        self.logger.info(
-            f"✅ {len(w._watchers)} watchers registered. Watcher loop started in background."
-        )
+        self.logger.info(f"✅ {len(w._watchers)} watchers started in background.")
 
     def _watcher_loop(self, interval: float = 1.0):
         self.logger.debug("📡 Watcher thread running.")
@@ -610,73 +497,56 @@ class PopupHandler:
             self.logger.info("🛑 Signaling watcher loop to stop...")
             self._watcher_stop_event.set()
             self._watcher_thread.join(timeout=2.0)
-            if self._watcher_thread.is_alive():
-                self.logger.warning("Watcher thread did not stop cleanly.")
             self._watcher_thread = None
 
         try:
             self.d.watcher.stop()
             self.d.watcher.remove()
-            self.logger.info("Underlying uiautomator2 watchers stopped and removed.")
+            self.logger.info("Underlying uiautomator2 watchers stopped.")
         except Exception as e:
             if "watch already stopped" not in str(e):
                 self.logger.error(f"Error stopping uiautomator2 watcher: {e}")
 
+    # --- Watcher Callbacks ---
     def handle_suspension(self, selector):
         self.logger.warning("🚫 WATCHER: Account suspended popup detected!")
         if self._suspension_handled:
             self.logger.info("⏭️ Suspension already handled for this account.")
             return
-
         if not self.record_id or not self.airtable_client:
-            self.logger.error(
-                "❌ Cannot handle suspension: Missing record_id or Airtable client."
-            )
+            self.logger.error("❌ Cannot handle suspension: Missing context.")
             return
-
         try:
             self.logger.info(f"Updating Airtable record {self.record_id} to 'Banned'.")
             if self.base_id:
                 self.airtable_client.base_id = self.base_id
             if self.table_id:
                 self.airtable_client.table_id = self.table_id
-
             self.airtable_client.update_record_fields(
                 self.record_id, {"Status": "Banned"}
             )
             self.logger.info("✅ Updated Airtable status to 'Banned'.")
-
             if self.package_name:
                 self.logger.info(f"🛑 Stopping suspended app: {self.package_name}")
                 self.d.app_stop(self.package_name)
-
             self._suspension_handled = True
         except Exception as e:
-            self.logger.error(
-                f"💥 Error in handle_suspension callback: {e}", exc_info=True
-            )
+            self.logger.error(f"💥 Error in handle_suspension: {e}", exc_info=True)
 
     def handle_vpn_slow_connection(self, selector):
-        self.logger.warning(
-            f"WATCHER: 'handle_vpn_slow_connection' triggered but has no action defined."
-        )
+        self.logger.warning("WATCHER: 'handle_vpn_slow_connection' triggered.")
 
     def photo_removed_callback(self, selector):
-        self.logger.warning(
-            f"WATCHER: 'photo_removed_callback' triggered but has no action defined."
-        )
+        self.logger.warning("WATCHER: 'photo_removed_callback' triggered.")
 
     def handle_generic_error_toast(self, selector):
-        self.logger.warning(
-            f"WATCHER: 'handle_generic_error_toast' triggered but has no action defined."
-        )
+        self.logger.warning("WATCHER: 'handle_generic_error_toast' triggered.")
 
 
-# --- STANDALONE TEST BLOCK ---
+# --- Main Execution Block ---
 if __name__ == "__main__":
-    module_logger.info("--- Running Instagram Login Handler Standalone E2E Test ---")
+    module_logger.info("--- Main LoginBot Script Started ---")
 
-    INSTAGRAM_PACKAGE_NAME = "com.instagram.androir"
     BASE_ID = os.getenv("IG_ARMY_BASE_ID")
     TABLE_ID = os.getenv("IG_ARMY_ACCS_TABLE_ID")
 
@@ -685,31 +555,53 @@ if __name__ == "__main__":
     login_result = "not_run"
 
     try:
+        # 1. Fetch Account Details from Airtable
         module_logger.info("Fetching one unused account from Airtable...")
         airtable_client = AirtableClient()
-        accounts_to_test = airtable_client.fetch_unused_accounts(max_records=1)
+        accounts_to_process = airtable_client.fetch_unused_accounts(max_records=1)
 
-        if not accounts_to_test:
+        if not accounts_to_process:
+            module_logger.error("❌ No unused accounts found. Cannot proceed.")
+            sys.exit(1)
+
+        account_data = accounts_to_process[0]
+
+        # Extract and clean the device_id and package_name
+        device_id_val = account_data.get("device_id")
+        package_name_val = account_data.get("package_name")
+
+        if isinstance(device_id_val, list) and device_id_val:
+            DEVICE_ID = device_id_val[0].strip()
+        elif isinstance(device_id_val, str):
+            DEVICE_ID = device_id_val.strip()
+        else:
+            DEVICE_ID = None
+
+        if isinstance(package_name_val, list) and package_name_val:
+            PACKAGE_NAME = package_name_val[0].strip()
+        elif isinstance(package_name_val, str):
+            PACKAGE_NAME = package_name_val.strip()
+        else:
+            PACKAGE_NAME = None
+
+        if not DEVICE_ID or not PACKAGE_NAME:
             module_logger.error(
-                "❌ No unused accounts found in Airtable. Cannot proceed."
+                f"❌ Account {account_data.get('instagram_username')} is missing "
+                f"a valid 'device_id' or 'package_name' after processing. Skipping."
             )
             sys.exit(1)
 
-        account_data = accounts_to_test[0]
-        TEST_USERNAME = account_data["instagram_username"]
-        TEST_PASSWORD = account_data["instagram_password"]
-        TEST_EMAIL = account_data["email_address"]
-        TEST_EMAIL_PASSWORD = account_data["email_password"]
-        TEST_RECORD_ID = account_data["record_id"]
-
         module_logger.info(
-            f"✅ Found account to test: {TEST_USERNAME} (Record: {TEST_RECORD_ID})"
+            f"✅ Processing account: {account_data['instagram_username']} "
+            f"on device: '{DEVICE_ID}' for package: '{PACKAGE_NAME}'"
         )
 
-        module_logger.info("Connecting to device...")
-        d = u2.connect()
-        module_logger.info(f"Connected to device: {d.serial}")
+        # 2. Connect to the Specific Device
+        module_logger.info(f"Connecting to device: {DEVICE_ID}...")
+        d = u2.connect(DEVICE_ID)
+        module_logger.info(f"✅ Connected to device: {d.serial}")
 
+        # 3. Rotate IP Address
         module_logger.info("--- Starting NordVPN IP Rotation ---")
         try:
             rotate_nordvpn_ip(d)
@@ -718,51 +610,57 @@ if __name__ == "__main__":
             module_logger.error(f"❌ VPN IP rotation failed: {vpn_error}. Aborting.")
             sys.exit(1)
 
+        # 4. Initialize and Start Popup Watchers
         module_logger.info("Initializing and starting PopupHandler...")
         popup_handler = PopupHandler(driver=d)
         popup_handler.set_context(
             airtable_client=airtable_client,
-            record_id=TEST_RECORD_ID,
-            package_name=INSTAGRAM_PACKAGE_NAME,
+            record_id=account_data["record_id"],
+            package_name=PACKAGE_NAME,
             base_id=BASE_ID,
             table_id=TABLE_ID,
         )
         popup_handler.register_and_start_watchers()
 
-        module_logger.info(f"Starting Instagram app ('{INSTAGRAM_PACKAGE_NAME}')...")
-        d.app_start(INSTAGRAM_PACKAGE_NAME, stop=True)
+        # 5. Start Instagram Application
+        module_logger.info(f"Starting Instagram app ('{PACKAGE_NAME}')...")
+        d.app_start(PACKAGE_NAME, stop=True)
         time.sleep(5)
 
-        interactions = InstagramInteractions(
-            device=d, app_package=INSTAGRAM_PACKAGE_NAME
-        )
+        # 6. Initialize Handlers for Login Execution
+        interactions = InstagramInteractions(device=d, app_package=PACKAGE_NAME)
         typer = StealthTyper(device_id=d.serial)
         login_handler = InstagramLoginHandler(
             device=d,
             interactions=interactions,
             stealth_typer=typer,
             airtable_client=airtable_client,
-            record_id=TEST_RECORD_ID,
+            record_id=account_data["record_id"],
             base_id=BASE_ID,
             table_id=TABLE_ID,
         )
 
+        # 7. Execute the Login Process
         login_result = login_handler.execute_login(
-            TEST_USERNAME, TEST_PASSWORD, TEST_EMAIL, TEST_EMAIL_PASSWORD
+            username=account_data["instagram_username"],
+            password=account_data["instagram_password"],
+            email_address=account_data["email_address"],
+            email_password=account_data["email_password"],
         )
 
     except Exception as e:
         module_logger.error(
-            f"💥 A critical error occurred during the test: {e}", exc_info=True
+            f"💥 A critical error occurred during execution: {e}", exc_info=True
         )
         login_result = "critical_error"
 
     finally:
-        module_logger.info("--- Test Process Finished ---")
+        # 8. Cleanup and Final Status
+        module_logger.info("--- Execution Finished ---")
         module_logger.info(f"Final Login Status: {login_result.upper()}")
 
         if popup_handler:
             module_logger.info("Stopping popup watchers...")
             popup_handler.stop_watchers()
 
-        module_logger.info("--- Test Complete ---")
+        module_logger.info("--- Script Complete ---")

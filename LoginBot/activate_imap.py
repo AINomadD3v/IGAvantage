@@ -2,6 +2,7 @@
 
 import concurrent.futures
 import logging
+import random
 import re
 from dataclasses import dataclass
 
@@ -25,9 +26,9 @@ class Config:
     LOGIN_URL: str = (
         "https://konto.onet.pl/en/signin?state=https%3A%2F%2Fpoczta.onet.pl%2F&client_id=poczta.onet.pl.front.onetapi.pl"
     )
-    HEADLESS_MODE: bool = False
-    ACCOUNTS_TO_PROCESS: int = 3
-    MAX_WORKERS: int = 1
+    HEADLESS_MODE: bool = True
+    ACCOUNTS_TO_PROCESS: int = 10
+    MAX_WORKERS: int = 4
 
 
 class OnetImapActivator:
@@ -81,7 +82,6 @@ class OnetImapActivator:
                     )
                     error_result = {
                         "status": "error",
-                        "message": str(e),
                         "account": account,
                     }
                     self._update_airtable_record(error_result)
@@ -105,26 +105,74 @@ class OnetImapActivator:
         email = account_data["email"]
         try:
             with sync_playwright() as p:
+                # -- STEP 1: Random User-Agent to avoid detection
+                user_agents = [
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15",
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                ]
+                user_agent = random.choice(user_agents)
+
+                # -- STEP 2: Realistic browser fingerprint
                 browser = p.chromium.launch(headless=self.config.HEADLESS_MODE)
-                page = browser.new_page()
+                context = browser.new_context(
+                    user_agent=user_agent,
+                    viewport={"width": 1280, "height": 800},
+                    locale="en-US",
+                    timezone_id="Europe/Warsaw",
+                    geolocation={"longitude": 19.9449799, "latitude": 50.0646501},
+                    permissions=["geolocation"],
+                )
+                page = context.new_page()
 
-                # Resize the browser window to ensure all UI elements are in view
-                page.set_viewport_size(
-                    {"width": 1920, "height": 1080}
-                )  # Adjust to desired resolution
+                # -- STEP 3: Stealth patch common bot fingerprints
+                page.add_init_script(
+                    """    // Stealth patch: WebGL
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return 'NVIDIA Corporation';
+        if (parameter === 37446) return 'NVIDIA GeForce GTX 1050/PCIe/SSE2';
+        return getParameter(parameter);
+    };
 
+    // Stealth patch: navigator.mediaDevices
+    navigator.mediaDevices.enumerateDevices = async () => [{
+        kind: 'videoinput',
+        label: 'Built-in Camera',
+        deviceId: 'abcd',
+        groupId: '1234'
+    }];
+
+    // Stealth patch: screen resolution lying
+    Object.defineProperty(window.screen, 'width', { get: () => 1280 });
+    Object.defineProperty(window.screen, 'height', { get: () => 800 });
+
+    // Stealth patch: HardwareConcurrency
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
+
+    // Stealth patch: Permissions API
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : originalQuery(parameters)
+    );"""
+                )
+
+                # Resize (just to be sure; matches viewport above)
+                page.set_viewport_size({"width": 1280, "height": 800})
+
+                # Fresh load
                 page.goto(self.config.LOGIN_URL)
 
                 self._handle_cookie_banner(page)
                 self._perform_login(page, account_data)
-
-                # Immediately handle all potential pop-up screens after login
                 self._handle_post_login_sequence(page)
+                self._navigate_and_enable_protocols(page, email)
 
-                # Now that pop-ups are handled, we can proceed to the inbox
-                self._navigate_and_enable_protocols(page)
-
+                context.close()
                 browser.close()
+
                 success_message = f"IMAP and POP3 configuration complete for {email}"
                 logging.info(success_message)
                 return {
@@ -132,6 +180,7 @@ class OnetImapActivator:
                     "message": success_message,
                     "account": account_data,
                 }
+
         except Exception as e:
             error_message = (
                 f"Failed during activation for {email}: {type(e).__name__} - {e}"
@@ -196,43 +245,73 @@ class OnetImapActivator:
         except TimeoutError:
             pass  # This screen is also optional
 
-    def _navigate_and_enable_protocols(self, page: Page):
+    def _navigate_and_enable_protocols(self, page: Page, email: str):
         """Navigates to settings from the inbox and toggles IMAP/POP3."""
-        # Now we can safely expect to be on the inbox page
-        expect(page).to_have_url(
-            re.compile(r"https://poczta.onet.pl/.*"), timeout=25000
-        )
-        logging.info("Successfully landed on inbox page. Navigating to settings...")
+        logging.info("Navigating to settings...")
+        try:
+            page.get_by_role("button", name="").click()
+            page.get_by_role(
+                "link", name=re.compile(r"Ustawienia", re.IGNORECASE)
+            ).click()
+            expect(page).to_have_url(
+                re.compile(r".*ustawienia.poczta.onet.pl.*"), timeout=15000
+            )
+            logging.info("Navigated to settings page.")
 
-        page.get_by_role("button", name="").click()
-        page.get_by_role("link", name=re.compile(r"Ustawienia")).click()
-        expect(page).to_have_url(
-            re.compile(r".*ustawienia.poczta.onet.pl.*"), timeout=15000
-        )
+            # This check remains valid.
+            if not page.locator('label[for="popCheck"]').is_visible(timeout=5000):
+                logging.info(
+                    "Settings not immediately visible, clicking 'Konto główne'..."
+                )
+                page.get_by_role("button", name="Konto główne").click()
 
-        if not page.locator("#popCheck").is_visible(timeout=5000):
-            page.get_by_role("button", name="Konto główne").click()
+            # --- START OF MODIFIED SECTION ---
 
-            # 3. Check and Enable Protocols
-            pop3_toggle = page.locator("#popCheck")
-            imap_toggle = page.locator("#imapCheck")
-            expect(pop3_toggle).to_be_visible(timeout=10000)
+            # 1. CORRECTED LOCATORS: Target the <label> as the container.
+            pop3_container = page.locator('label[for="popCheck"]')
+            imap_container = page.locator('label[for="imapCheck"]')
 
-            if not pop3_toggle.is_checked():
-                print("POP3 is OFF. Enabling it now...")
-                pop3_toggle.click(force=True)
-                expect(pop3_toggle).to_be_checked()
-                print("POP3 has been successfully turned ON.")
+            # 2. Check and Enable POP3 with Text Verification
+            logging.info("Checking POP3 status...")
+            expect(pop3_container).to_be_visible(timeout=10000)
+
+            # Get text content and check for None to prevent type errors.
+            pop3_status = pop3_container.text_content()
+            if pop3_status and "Wyłączony" in pop3_status:
+                logging.info("POP3 is OFF. Enabling it now...")
+                pop3_container.dispatch_event("click")
+                # Verify the text changes to "On" inside the container.
+                expect(
+                    pop3_container.locator('span:text-is("Włączony")')
+                ).to_be_visible(timeout=10000)
+                logging.info("POP3 has been successfully turned ON and verified.")
+                page.wait_for_timeout(5000)  # Wait 2 seconds for the setting to save
             else:
-                print("POP3 is already ON.")
+                logging.info("POP3 is already ON.")
 
-            if not imap_toggle.is_checked():
-                print("IMAP is OFF. Enabling it now...")
-                imap_toggle.click(force=True)
-                expect(imap_toggle).to_be_checked()
-                print("IMAP has been successfully turned ON.")
+            # 3. Check and Enable IMAP with Text Verification
+            logging.info("Checking IMAP status...")
+            expect(imap_container).to_be_visible(timeout=10000)
+
+            # Get text content and check for None to prevent type errors.
+            imap_status = imap_container.text_content()
+            if imap_status and "Wyłączony" in imap_status:
+                logging.info("IMAP is OFF. Enabling it now...")
+                imap_container.dispatch_event("click")
+                # Verify the text changes to "On" inside the container.
+                expect(
+                    imap_container.locator('span:text-is("Włączony")')
+                ).to_be_visible(timeout=10000)
+                logging.info("IMAP has been successfully turned ON and verified.")
+                page.wait_for_timeout(5000)  # Wait 2 seconds for the setting to save
             else:
-                print("IMAP is already ON.")
+                logging.info("IMAP is already ON.")
+            # --- END OF MODIFIED SECTION ---
+        except Exception as e:
+            # The main exception handler in _activate_single_account will catch this
+            # and trigger the DOM dump.
+            logging.error(f"An error occurred on the settings page for {email}.")
+            raise e
 
 
 if __name__ == "__main__":
